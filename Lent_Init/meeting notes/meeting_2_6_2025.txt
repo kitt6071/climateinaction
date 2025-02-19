@@ -1,0 +1,69 @@
+google ai studio has free time - gemini 2
+free for non commercial testing purposes
+
+gemini 2 for summarization, even the flash light models
+
+wiki species
+what species specifically is being targeted by what threat? how reasonably species rich does it go? birds? sea birds? albatross
+
+figure out the questions you want to ask
+paper describes the why part
+what questions are interesting or fulfilling enough to answer
+
+burn some gemini credits
+unsure how that works
+use experimentation with key from ai studio then do keys with the paid one with rate limits
+
+what's the min power model before you drop off results
+or how well can you do this with a good model in comparison?
+
+human experts answering questions
+
+o1 too expensive, reasoning model for triples?
+
+
+threats index
+how do u categorize the threats
+how do you automatically create taxonomy from this for threats
+
+wiki species taxonomy for species
+
+how do you take language models apply to the graphs and come up with a taxonomy, nested taxonomy
+
+group triples, multiple effects on things
+vehicles -> road vehicles, boats
+knowledge graph then turning into structured taxonomy
+
+run queries over that taxonomy, how many papers per year deal with vehicle accidents and what subset deals with road?
+
+Threat database/taxonomy is better than model comparison because it can be more applicable to other species and things that may be interesting
+
+conservation in action database
+
+
+teach model to look up something in the tool with RAG app - just interesting side
+
+sparkyl? what people use to find rdf triples
+
+plan for thing to take one month, plan for the core to be one
+work on cool visualizations
+
+get the modules out of the way and get working environment up and running for the end of the month of February
+
+brief note of what I have done the day before-
+this is what i did this week and this is what i did last week, cut and paste for summary on the next week from the last week
+(ppt?)
+
+internal git for cambreidge
+put project on university Cambridge git lab https://gitlab.developers.cam.ac.uk/users/sign_in
+
+Work with ollama on the new project
+lets you run an api locally so you can playu around with the smaller models
+llama 3.3 7b
+
+EEG meetings? 
+
+GitLab opoen to anyone in the university, transfer to GitHub to open
+
+
+
