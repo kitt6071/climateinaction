@@ -9,6 +9,8 @@ import openai
 import hashlib
 import pickle
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 def load_data(file_path: str) -> pl.DataFrame:
     df = pl.read_csv(file_path)
@@ -80,12 +82,15 @@ class Cache:
 
 # initializes the api client, openai gpt4 in this case
 def setup_llm():
-    ### Move to environment file before transfer to Github
-    api_key = "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"
+    load_dotenv()  # Load environment variables from .env file
+    api_key = os.getenv('OPENAI_API_KEY')
+    
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment variables")
     
     return {
-        'client': openai.Client(api_key=api_key),  # Pass api_key to client
-        'rate_limiter': RateLimiter(rpm=500),  # using GPT-4, limiting to 500 rate per min, but only 33 abstracts rn so rate isn't felt
+        'client': openai.Client(api_key=api_key),
+        'rate_limiter': RateLimiter(rpm=500),
         'cache': Cache()
     }
 
