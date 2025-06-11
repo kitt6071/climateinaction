@@ -1,93 +1,104 @@
-# climate_inaction
+# Climate Inaction Knowledge Graph Pipeline
 
+This project is a data processing pipeline designed to extract, analyze, and visualize relationships between species and climate change-related threats from a vast collection of scientific abstracts. It leverages Large Language Models (LLMs) and various natural language processing (NLP) techniques to build a comprehensive knowledge graph.
 
+## Key Features
 
-## Getting started
+- **Automated Triplet Extraction:** Extracts `(subject, predicate, object)` triplets (e.g., `(Polar Bear, is threatened by, sea ice loss)`) from scientific abstracts.
+- **Taxonomic Verification:** Uses Wikispecies to verify and normalize species names, ensuring data accuracy.
+- **Threat Classification:** Classifies extracted threats according to the IUCN threat category system.
+- **Relevance Classification:** Employs both traditional machine learning and LLM-based classifiers to determine the relevance of abstracts to climate change.
+- **Data Deduplication:** Includes a caching mechanism to avoid reprocessing of abstracts and entities.
+- **Interactive Visualization:** Provides a web-based interface to visualize the extracted knowledge graph and analyze threat clusters.
+- **Dockerized Environment:** Ensures reproducibility and ease of setup through a Dockerized environment.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## File Structure
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+The project is organized into several directories, each serving a specific purpose. Here is a breakdown of the key files and folders:
 
-## Add your files
+### Root Directory
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+- `Dockerfile`: Defines the Docker image for the application, ensuring a consistent and reproducible environment with all necessary dependencies.
+- `app.py`: A Flask web application that serves the interactive knowledge graph visualization and provides an API for querying the data.
+- `backend_triplets.py`: Contains the logic for the backend data processing, including data loading, embedding generation, and threat clustering.
+- `batchrun.sh`: A shell script for running the data processing pipeline in batch mode, allowing for large-scale data ingestion.
+- `docker-compose.yml`: Configures the services, networks, and volumes for the Docker application, making it easy to run the entire stack with a single command.
+- `full_analysis.py`: A script for running a comprehensive analysis of the extracted data, including graph metrics and cluster analysis.
+- `requirements.txt`: Lists the Python dependencies required for the project, which are installed in the Docker container.
+- `train_relevance_classifier.py`: A script for training the machine learning models used to classify the relevance of abstracts.
 
-```
-cd existing_repo
-git remote add origin https://gitlab.developers.cam.ac.uk/kh807/climate_inaction.git
-git branch -M main
-git push -uf origin main
-```
+### `Lent_Init/`
 
-## Integrate with your tools
+This directory contains the core logic of the data processing pipeline.
 
-- [ ] [Set up project integrations](https://gitlab.developers.cam.ac.uk/kh807/climate_inaction/-/settings/integrations)
+- `main_pipeline.py`: The main entry point for the data processing pipeline, orchestrating the various steps from data loading to triplet extraction and analysis.
+- `setup.py`: Contains setup functions for the pipeline, including logging configuration, data loading, and LLM setup.
+- `llm_api_utility.py`: Provides utility functions for interacting with LLM APIs, including rate limiting and response handling.
+- `triplet_extraction.py`: Contains the core logic for extracting species, threats, and their relationships from abstracts using LLMs.
+- `iucn_refinement.py`: Includes functions for classifying extracted threats according to the IUCN threat categories.
+- `wikispecies_utils.py`: Provides utilities for interacting with the Wikispecies API to verify and normalize species names.
+- `batch_ingesting.py`: Manages the batch ingestion of abstracts, including relevance classification and chunking.
+- `graph_analysis.py`: Contains functions for analyzing the extracted knowledge graph, including degree centrality and other metrics.
+- `cache.py`: Implements a simple caching mechanism to store and retrieve intermediate results, avoiding redundant processing.
 
-## Collaborate with your team
+### `static/`
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+This directory contains the static assets for the web application, including JavaScript, CSS, and other client-side files.
 
-## Test and Deploy
+- `script.js`: The main JavaScript file for the web interface, handling user interactions and orchestrating the various visualization components.
+- `visualize_graph.js`: Contains the core logic for rendering and interacting with the knowledge graph using the `vis.js` library.
+- `analysis.js`: Handles data analysis features on the frontend, such as calculating and displaying graph metrics.
+- `calc_network.js`: Responsible for calculating network properties and metrics for the graph visualization.
+- `chain_build.js`: Manages the construction of query chains or other complex user interactions on the frontend.
+- `chart_util.js`: Provides utility functions for creating and updating charts, likely used for displaying analysis results.
+- `data_loading.js`: Handles the loading of data into the frontend, including making asynchronous requests to the backend API.
+- `kg_query.js`: Manages the querying of the knowledge graph from the frontend, allowing users to search for specific entities.
+- `kg_transfer.js`: Used for transferring knowledge graph data, such as exporting or importing graph structures.
+- `search.js`: Implements the search functionality for the web interface, allowing users to find nodes and relationships in the graph.
+- `style.css`: The main stylesheet for the web application, defining the visual appearance of all interface components.
+- `embeddings_scripts/`: This subdirectory contains scripts related to the analysis and visualization of threat embeddings.
+    - `click.js`: Handles click events within the embedding visualization.
+    - `cluster_quality_analysis.js`: Provides frontend logic for analyzing the quality of threat clusters.
+    - `clustering.js`: Manages frontend clustering operations for embeddings.
+    - `dim_reduct.js`: Manages the visualization of dimensionality reduction (e.g., UMAP or t-SNE) on the frontend.
+    - `embeddings_analysis.js`: The main script for the embedding analysis interface.
+    - `semantic_analysis.js`: Contains logic for performing semantic analysis of embeddings on the frontend.
+    - `visualization.js`: Provides general visualization scripts for the embedding analysis interface.
 
-Use the built-in continuous integration in GitLab.
+### `templates/`
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+This directory contains the HTML templates for the Flask web application.
 
-***
+- `index.html`: The main HTML file for the single-page web application. It provides the structure for the knowledge graph visualization and includes all necessary JavaScript and CSS files.
 
-# Editing this README
+### `trained_relevance_models_central/deepseek_r1_runs/deepseek_deepseek-r1-0528/`
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+This directory stores the pre-trained machine learning models for relevance classification for Deepseek-r1-0528.
 
-## Suggestions for a good README
+- `embedding_classifier.pkl`: The trained classifier for predicting the relevance of abstracts based on their embeddings.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Setup and Installation
 
-## Name
-Choose a self-explaining name for your project.
+The project is designed to run in a Dockerized environment to ensure consistency and ease of setup. Follow these steps to get the application running:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+1.  **Build the Docker Image and Run Three Part Pipeline With:**
+    ```./batchrun.sh --max {number of abstracts} --model_name {model name}
+    ```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+2.  **Run the Website:**
+    ```python3 app.py
+    ```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+REQUIREMENTS FOR RUNNING:
+You will need a .env file with an OPENROUTER_API_KEY. This will let you use the LLM APIs. You will also need an all_abstracts.parquet.
+I was unable to attach this because some of the files in the document are private and only for the use of the Conservation Evidence Team.
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Running the Data Pipeline
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+The data processing pipeline can be run in batch mode using the `batchrun.sh` script. This script will ingest abstracts from the specified data source, process them through the pipeline, and store the results in the appropriate directories.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### Visualizing the Knowledge Graph
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Once the pipeline has been run with `app.py`, you can view the interactive knowledge graph by opening your web browser and navigating to `http://localhost:5000`. The web interface allows you to explore the relationships between species and threats, search for specific entities, and analyze the structure of the graph.

@@ -1,0 +1,3 @@
+Potential connections not in graph:
+
+yield declined after one harvest [IUCN: 12.1 Other threat] -- yield declined after two harvests [IUCN: 12.1 Other threat] (similarity: 0.985)\nyield declined after two harvests [IUCN: 12.1 Other threat] -- yield declined after one harvest [IUCN: 12.1 Other threat] (similarity: 0.985)\n

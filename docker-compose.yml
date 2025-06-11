@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  threat_analysis:
+    build: .
+    volumes:
+      - .:/app
+      - .env:/app/.env
+      - /Users/kittsonhamill/Desktop/all_abstracts.parquet:/app/all_abstracts.parquet
+      - ./Lent_Init/data:/app/Lent_Init/data
+      - ./Lent_Init/models:/app/Lent_Init/models
+      - ./Lent_Init/cache:/app/Lent_Init/cache
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TAXONOMY_FILTER=${TAXONOMY_FILTER}
+      - MAX_RESULTS=${MAX_RESULTS}
+      - MODEL_NAME_FOR_RUN=${MODEL_NAME_FOR_RUN}

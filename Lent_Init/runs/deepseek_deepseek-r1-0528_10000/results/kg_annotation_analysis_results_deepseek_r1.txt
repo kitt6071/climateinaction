@@ -1,0 +1,13 @@
+--- Knowledge Graph Annotation Analysis ---
+Total Triples Annotated: 375
+Correct Triples: 268
+Incorrect Triples: 107
+Point Estimate of Accuracy: 0.7147 (71.47%)
+95% Bayesian Credible Interval for Accuracy: [0.6669, 0.7580]
+  (This means there is a 95% probability that the true accuracy of the entire KG is between 66.69% and 75.80%)
+
+--- Error Code Frequencies ---
+  A: 73 occurrences
+  C: 46 occurrences
+  D: 19 occurrences
+  B1: 2 occurrences
