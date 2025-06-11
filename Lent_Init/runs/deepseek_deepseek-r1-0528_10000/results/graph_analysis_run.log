@@ -1,0 +1,19 @@
+2025-06-09 23:41:12,826 - INFO - enhanced_graph_analysis.py:110 - enhanced_graph_analysis - Logging initialized. Detailed logs will be written to: /Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second_run_deep/deepseek_deepseek-r1-0528_10000/results/graph_analysis_run.log
+2025-06-09 23:41:12,826 - INFO - enhanced_graph_analysis.py:80 - enhanced_graph_analysis - Initializing SentenceTransformer model: all-MiniLM-L6-v2
+2025-06-09 23:41:14,926 - INFO - enhanced_graph_analysis.py:86 - enhanced_graph_analysis - GraphAnalyzer initialized with base directory: /Users/kittsonhamill/Desktop/dissertation/climate_inaction
+2025-06-09 23:41:14,927 - INFO - enhanced_graph_analysis.py:87 - enhanced_graph_analysis - Results will be saved to: /Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second_run_deep/deepseek_deepseek-r1-0528_10000/results
+2025-06-09 23:41:14,927 - INFO - enhanced_graph_analysis.py:88 - enhanced_graph_analysis - Figures will be saved to: /Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second_run_deep/deepseek_deepseek-r1-0528_10000/results/figures
+2025-06-09 23:41:14,927 - INFO - enhanced_graph_analysis.py:278 - enhanced_graph_analysis - Loading graph from triplets: /Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second_run_deep/deepseek_deepseek-r1-0528_10000/results/enriched_triplets.json
+2025-06-09 23:41:14,961 - INFO - enhanced_graph_analysis.py:158 - enhanced_graph_analysis - Starting threat consolidation for 7612 unique threat strings.
+2025-06-09 23:41:14,961 - WARNING - enhanced_graph_analysis.py:162 - enhanced_graph_analysis - Too many threats (7612) for consolidation. Skipping to avoid performance issues. Use force_consolidation=True to override.
+2025-06-09 23:41:15,010 - INFO - enhanced_graph_analysis.py:341 - enhanced_graph_analysis - Graph loaded with 9916 nodes and 11208 edges after threat consolidation.
+2025-06-09 23:41:15,013 - INFO - enhanced_graph_analysis.py:2033 - enhanced_graph_analysis - Starting degree distribution analysis in: /Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second_run_deep/deepseek_deepseek-r1-0528_10000/results/figures
+2025-06-09 23:41:15,013 - INFO - enhanced_graph_analysis.py:2040 - enhanced_graph_analysis - Analyzing degree distribution...
+2025-06-09 23:41:15,531 - INFO - enhanced_graph_analysis.py:1226 - enhanced_graph_analysis - Degree distribution plot saved to: /Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second_run_deep/deepseek_deepseek-r1-0528_10000/results/figures/degree_distribution.pdf
+2025-06-09 23:41:15,532 - INFO - enhanced_graph_analysis.py:1231 - enhanced_graph_analysis - Degree Distribution Analysis for Global:
+2025-06-09 23:41:15,532 - INFO - enhanced_graph_analysis.py:1232 - enhanced_graph_analysis -   - Total nodes: 9916
+2025-06-09 23:41:15,533 - INFO - enhanced_graph_analysis.py:1233 - enhanced_graph_analysis -   - Total edges: 11208
+2025-06-09 23:41:15,533 - INFO - enhanced_graph_analysis.py:1234 - enhanced_graph_analysis -   - Average degree: 2.26
+2025-06-09 23:41:15,533 - INFO - enhanced_graph_analysis.py:1235 - enhanced_graph_analysis -   - Max degree: 1123
+2025-06-09 23:41:15,534 - INFO - enhanced_graph_analysis.py:1236 - enhanced_graph_analysis -   - Min degree: 1
+2025-06-09 23:41:15,534 - INFO - enhanced_graph_analysis.py:2043 - enhanced_graph_analysis - Degree distribution analysis completed!

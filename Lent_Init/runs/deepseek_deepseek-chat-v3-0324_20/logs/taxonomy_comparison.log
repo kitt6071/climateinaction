@@ -1,0 +1,6 @@
+2025-06-11 08:55:01,351 - pipeline - INFO - setup.setup_pipeline_logging:41 - Logging setup: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/taxonomy_comparison.log
+2025-06-11 08:55:01,351 - pipeline - INFO - main_pipeline.run_taxonomy_comparison_logic:612 - Starting taxonomy comparison
+2025-06-11 08:55:01,351 - pipeline - INFO - main_pipeline.run_taxonomy_comparison_logic:613 - Logs: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/taxonomy_comparison.log
+2025-06-11 09:02:51,203 - pipeline - INFO - setup.setup_pipeline_logging:41 - Logging setup: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/taxonomy_comparison.log
+2025-06-11 09:02:51,203 - pipeline - INFO - main_pipeline.run_taxonomy_comparison_logic:612 - Starting taxonomy comparison
+2025-06-11 09:02:51,203 - pipeline - INFO - main_pipeline.run_taxonomy_comparison_logic:613 - Logs: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/taxonomy_comparison.log
