@@ -5,14 +5,21 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 from collections import defaultdict, Counter
-from sentence_transformers import SentenceTransformer, util
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.mixture import GaussianMixture
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import StandardScaler
+def import_lazy():
+    global SentenceTransformer, util, TfidfVectorizer, KMeans, DBSCAN, GaussianMixture, PCA, TSNE, silhouette_score, StandardScaler
+    try:
+        from sentence_transformers import SentenceTransformer, util
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.cluster import KMeans, DBSCAN
+        from sklearn.mixture import GaussianMixture
+        from sklearn.decomposition import PCA
+        from sklearn.manifold import TSNE
+        from sklearn.metrics import silhouette_score
+        from sklearn.preprocessing import StandardScaler
+        return True
+    except ImportError as e:
+        logger.error(f"Failed to import ML libraries: {e}")
+        return False
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import time
@@ -51,13 +58,26 @@ DATA_PATH = "/data/data_with_embeddings.json"
 
 class SemanticThreatAnalyzer:
     def __init__(self, model_name='all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
+        self.model_name = model_name
+        self.model = None
         self.threat_embeddings = {}
         self.impact_embeddings = {}
         self.threat_clusters = {}
         self.impact_clusters = {}
+        self.ml_loaded = False
+    
+    def _ensure_ml_loaded(self):
+        if not self.ml_loaded:
+            if import_lazy():
+                self.model = SentenceTransformer(self.model_name)
+                self.ml_loaded = True
+                return True
+            return False
+        return True
         
     def generate_embeddings(self, texts, cache_key=None):
+        if not self._ensure_ml_loaded():
+            return []
         if cache_key and cache_key in self.threat_embeddings:
             return self.threat_embeddings[cache_key]
         embeddings = self.model.encode(texts, show_progress_bar=False)
@@ -66,6 +86,9 @@ class SemanticThreatAnalyzer:
         return embeddings
     
     def cluster_threats(self, threat_texts, method='kmeans', n_clusters=None):
+        if not self._ensure_ml_loaded():
+            return [0] * len(threat_texts), [{'label': 'ML Libraries Not Available', 'keywords': [], 'size': len(threat_texts)}]
+        
         if len(threat_texts) < 2:
             return [0] * len(threat_texts), [{'label': 'Single Threat', 'keywords': [], 'size': len(threat_texts)}]
         
@@ -1286,6 +1309,31 @@ def health_check():
         "data_loaded": data_loaded,
         "triplets_count": len(triplets_data) if data_loaded else 0
     })
+
+@app.route('/load-data', methods=['POST'])
+def manual_load_data():
+    """Manually trigger data loading after file upload"""
+    try:
+        if load_data_if_needed():
+            return jsonify({
+                "success": True,
+                "message": "Data loaded successfully",
+                "triplets_count": len(triplets_data),
+                "kg_stats": {
+                    "species_count": kg_results.get('species_count', 0) if kg_results else 0,
+                    "threat_count": kg_results.get('threat_count', 0) if kg_results else 0
+                }
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Failed to load data. Check if data file exists at /data/data_with_embeddings.json"
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error loading data: {str(e)}"
+        }), 500
 
 @app.route('/api/triplets', methods=['GET'])
 def get_all_triplets():
@@ -2875,15 +2923,7 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     logger.info("Starting Climate Inaction Analysis Server...")
     
-    try:
-        if load_data_if_needed():
-            logger.info("Data loaded successfully.")
-            if kg_results:
-                logger.info(f"KG: {kg_results.get('species_count', 0)} species, {kg_results.get('threat_count', 0)} threats.")
-        else:
-            logger.warning("Data not available yet. Server will start but API endpoints may not work until data is uploaded.")
-    except Exception as e:
-        logger.warning(f"Data loading failed: {e}. Server will start but API endpoints may not work until data is uploaded.")
+    logger.info("Skipping data loading for initial deployment to save memory. Data will be loaded after file upload.")
     
     logger.info(f"Server running at http://0.0.0.0:{port}")
     app.run(debug=True, host='0.0.0.0', port=port)
