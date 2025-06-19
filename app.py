@@ -1218,31 +1218,50 @@ class SpeciesAnalyzer:
             'total_threats_analyzed': total_threats
         }
 
-logger.info(f"Loading data from {DATA_PATH}...")
-try:
-    with open(DATA_PATH, 'r', encoding='utf-8') as f:
-        app_data = json.load(f)
-    triplets_data = app_data.get("triplets", [])
-    for triplet in triplets_data:
-        if 'embedding' in triplet and triplet['embedding'] is not None:
-            triplet['embedding_tensor'] = torch.tensor(triplet['embedding'])
-        else:
-            triplet['embedding_tensor'] = None
-    logger.info(f"Data loaded: {len(triplets_data)} triplets available.")
-except FileNotFoundError:
-    logger.error(f"Data file not found: {DATA_PATH}")
-    triplets_data = []
-except json.JSONDecodeError:
-    logger.error(f"Could not decode JSON from {DATA_PATH}")
-    triplets_data = []
+triplets_data = []
+enhanced_kg = None
+kg_results = None
+analyzer = None
+data_loaded = False
 
-logger.info("Initializing knowledge graph...")
-enhanced_kg = EnhancedKnowledgeGraph()
-kg_results = enhanced_kg.build_enriched_graph(triplets_data, load_ecological=False)
-logger.info("Knowledge graph initialized.")
+def load_data_if_needed():
+    global triplets_data, enhanced_kg, kg_results, analyzer, data_loaded
+    
+    if data_loaded:
+        return True
+    
+    logger.info(f"Loading data from {DATA_PATH}...")
+    try:
+        with open(DATA_PATH, 'r', encoding='utf-8') as f:
+            app_data = json.load(f)
+        triplets_data = app_data.get("triplets", [])
+        for triplet in triplets_data:
+            if 'embedding' in triplet and triplet['embedding'] is not None:
+                triplet['embedding_tensor'] = torch.tensor(triplet['embedding'])
+            else:
+                triplet['embedding_tensor'] = None
+        logger.info(f"Data loaded: {len(triplets_data)} triplets available.")
+        
+        logger.info("Initializing knowledge graph...")
+        enhanced_kg = EnhancedKnowledgeGraph()
+        kg_results = enhanced_kg.build_enriched_graph(triplets_data, load_ecological=False)
+        logger.info("Knowledge graph initialized.")
 
-analyzer = SpeciesAnalyzer(triplets_data)
-logger.info("SpeciesAnalyzer initialized.")
+        analyzer = SpeciesAnalyzer(triplets_data)
+        logger.info("SpeciesAnalyzer initialized.")
+        
+        data_loaded = True
+        return True
+        
+    except FileNotFoundError:
+        logger.error(f"Data file not found: {DATA_PATH}")
+        return False
+    except json.JSONDecodeError:
+        logger.error(f"Could not decode JSON from {DATA_PATH}")
+        return False
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        return False
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
@@ -1257,10 +1276,22 @@ def get_triplet_by_id(triplet_id):
 def index():
     return render_template('index.html')
 
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy", "message": "Climate Analysis API is running"})
+
+@app.route('/api/status')
+def get_status():
+    return jsonify({
+        "status": "healthy", 
+        "data_loaded": data_loaded,
+        "triplets_count": len(triplets_data) if data_loaded else 0
+    })
+
 @app.route('/api/triplets', methods=['GET'])
 def get_all_triplets():
-    if not triplets_data:
-        return jsonify({"error": "No triplet data loaded, check server logs."}), 500
+    if not load_data_if_needed():
+        return jsonify({"error": "Failed to load triplet data, check server logs."}), 500
     display_triplets = [
         {k: v for k, v in t.items() if k not in ['embedding', 'embedding_tensor']}
         for t in triplets_data
@@ -1269,8 +1300,8 @@ def get_all_triplets():
 
 @app.route('/api/similar_threats', methods=['GET'])
 def find_similar_threats():
-    if not triplets_data:
-        return jsonify({"error": "No triplet data loaded, check server logs."}), 500
+    if not load_data_if_needed():
+        return jsonify({"error": "Failed to load triplet data, check server logs."}), 500
         
     target_triplet_id = request.args.get('id')
     if not target_triplet_id:
@@ -1308,6 +1339,9 @@ def find_similar_threats():
 @app.route('/api/species_analysis', methods=['POST'])
 def analyze_species():
     try:
+        if not load_data_if_needed():
+            return jsonify({'error': 'Failed to load data'}), 500
+            
         data = request.get_json()
         species_name = data.get('species_name')
         
@@ -1504,12 +1538,12 @@ systemic_analyzer = SystemicRiskAnalyzer()
 @app.route('/api/network_analysis', methods=['POST'])
 def network_analysis():
     try:
+        if not load_data_if_needed():
+            return jsonify({'success': False, 'error': 'Failed to load data'}), 500
+            
         data = request.get_json()
         analysis_type = data.get('analysis_type', 'shared_threats')
         species_list = data.get('species_list', [])
-        
-        if not triplets_data:
-            return jsonify({'success': False, 'error': 'No triplet data loaded'}), 500
         
         species_threats_data = {}
         
@@ -1675,8 +1709,8 @@ def systemic_metrics():
 @app.route('/api/threat_embeddings', methods=['GET'])
 def get_threat_embeddings():
     try:
-        if not triplets_data:
-            return jsonify({'success': False, 'error': 'No triplet data loaded'}), 500
+        if not load_data_if_needed():
+            return jsonify({'success': False, 'error': 'Failed to load data'}), 500
         
         general_subject_terms_to_filter = {'aves', 'bird', 'birds', 'afrotropical bird',
                                           'seabird', 'seabirds', 'waterbird', 'waterbirds',
