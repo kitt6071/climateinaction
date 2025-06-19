@@ -47,7 +47,7 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
-DATA_PATH = "backend/data_with_embeddings.json"
+DATA_PATH = "/data/data_with_embeddings.json"
 
 class SemanticThreatAnalyzer:
     def __init__(self, model_name='all-MiniLM-L6-v2'):
@@ -1277,6 +1277,15 @@ def get_triplet_by_id(triplet_id):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    return jsonify({
+        "status": "healthy", 
+        "message": "Climate Analysis API is running",
+        "data_loaded": data_loaded,
+        "triplets_count": len(triplets_data) if data_loaded else 0
+    })
 
 @app.route('/api/triplets', methods=['GET'])
 def get_all_triplets():
@@ -2865,10 +2874,16 @@ def generate_research_recommendations(target_species, transfer_candidates, gap_a
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     logger.info("Starting Climate Inaction Analysis Server...")
-    if not load_data_if_needed():
-        logger.error("Failed to load initial data. Server might not function correctly.")
     
-    if kg_results:
-        logger.info(f"KG: {kg_results.get('species_count', 0)} species, {kg_results.get('threat_count', 0)} threats.")
+    try:
+        if load_data_if_needed():
+            logger.info("Data loaded successfully.")
+            if kg_results:
+                logger.info(f"KG: {kg_results.get('species_count', 0)} species, {kg_results.get('threat_count', 0)} threats.")
+        else:
+            logger.warning("Data not available yet. Server will start but API endpoints may not work until data is uploaded.")
+    except Exception as e:
+        logger.warning(f"Data loading failed: {e}. Server will start but API endpoints may not work until data is uploaded.")
+    
     logger.info(f"Server running at http://0.0.0.0:{port}")
     app.run(debug=True, host='0.0.0.0', port=port)
