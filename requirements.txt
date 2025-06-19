@@ -6,6 +6,7 @@ seaborn
 networkx
 nltk
 flask
+flask-cors
 python-dotenv
 google-generativeai
 requests
