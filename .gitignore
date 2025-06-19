@@ -1,2 +1,29 @@
 .env 
-all_abstracts.parquet
+all_abstracts.parquetbackend/data_with_embeddings.json
+Lent_Init/runs/
+*.pkl
+*.bin
+*.pt
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+# Large data files
+backend/data_with_embeddings.json
+Lent_Init/runs/
+Lent_Init/__pycache__/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and temp files
+*.log
+.DS_Store
+*.tmp
+
+# Model files (if any)
+*.pkl
+*.bin
+*.pt

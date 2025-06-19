@@ -1,8 +1,0 @@
-2025-06-11 08:54:58,380 - pipeline - INFO - setup.setup_pipeline_logging:41 - Logging setup: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/wikispecies_verification.log
-2025-06-11 08:54:58,381 - pipeline - INFO - main_pipeline.run_wikispecies_verification_logic:565 - Starting Wikispecies verification
-2025-06-11 08:54:58,381 - pipeline - INFO - main_pipeline.run_wikispecies_verification_logic:566 - Logs: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/wikispecies_verification.log
-2025-06-11 08:54:58,772 - pipeline - INFO - main_pipeline.run_wikispecies_verification_logic:589 - Wikispecies verification done
-2025-06-11 09:02:47,504 - pipeline - INFO - setup.setup_pipeline_logging:41 - Logging setup: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/wikispecies_verification.log
-2025-06-11 09:02:47,504 - pipeline - INFO - main_pipeline.run_wikispecies_verification_logic:565 - Starting Wikispecies verification
-2025-06-11 09:02:47,505 - pipeline - INFO - main_pipeline.run_wikispecies_verification_logic:566 - Logs: /app/Lent_Init/runs/deepseek_deepseek-chat-v3-0324_20/logs/wikispecies_verification.log
-2025-06-11 09:02:47,837 - pipeline - INFO - main_pipeline.run_wikispecies_verification_logic:589 - Wikispecies verification done
