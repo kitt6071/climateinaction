@@ -19,7 +19,12 @@ import time
 import logging
 import re
 import torch
-import spacy
+try:
+    import spacy
+    SPACY_AVAILABLE = True
+except ImportError:
+    spacy = None
+    SPACY_AVAILABLE = False
 from urllib.parse import unquote
 
 logging.basicConfig(level=logging.INFO)
