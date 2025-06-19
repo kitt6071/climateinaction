@@ -102,7 +102,7 @@ function displayNetworkSummary() {
     let container = null;
     
     for (const containerId of containers) {
-        container = document.getElementById(containerId);
+        container = document.getElementById(containerId); 
         if (container) break;
     }
     

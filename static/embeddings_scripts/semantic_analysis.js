@@ -1,4 +1,3 @@
-// Semantic analysis functionality for embeddings analysis
 (function() {
     'use strict';
 
