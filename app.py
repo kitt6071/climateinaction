@@ -2469,8 +2469,11 @@ def extract_species_metadata(species_data):
     }
 
 try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
+    if spacy is not None:
+        nlp = spacy.load("en_core_web_sm")
+    else:
+        nlp = None
+except (OSError, AttributeError):
     nlp = None
 
 @app.route('/api/species/<species_name>/deepdive')
