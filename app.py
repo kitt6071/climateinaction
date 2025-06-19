@@ -19,6 +19,8 @@ import time
 import logging
 import re
 import torch
+import os
+
 try:
     import spacy
     SPACY_AVAILABLE = True
@@ -1276,22 +1278,10 @@ def get_triplet_by_id(triplet_id):
 def index():
     return render_template('index.html')
 
-@app.route('/health')
-def health_check():
-    return jsonify({"status": "healthy", "message": "Climate Analysis API is running"})
-
-@app.route('/api/status')
-def get_status():
-    return jsonify({
-        "status": "healthy", 
-        "data_loaded": data_loaded,
-        "triplets_count": len(triplets_data) if data_loaded else 0
-    })
-
 @app.route('/api/triplets', methods=['GET'])
 def get_all_triplets():
-    if not load_data_if_needed():
-        return jsonify({"error": "Failed to load triplet data, check server logs."}), 500
+    if not triplets_data:
+        return jsonify({"error": "No triplet data loaded, check server logs."}), 500
     display_triplets = [
         {k: v for k, v in t.items() if k not in ['embedding', 'embedding_tensor']}
         for t in triplets_data
@@ -1300,8 +1290,8 @@ def get_all_triplets():
 
 @app.route('/api/similar_threats', methods=['GET'])
 def find_similar_threats():
-    if not load_data_if_needed():
-        return jsonify({"error": "Failed to load triplet data, check server logs."}), 500
+    if not triplets_data:
+        return jsonify({"error": "No triplet data loaded, check server logs."}), 500
         
     target_triplet_id = request.args.get('id')
     if not target_triplet_id:
@@ -1339,9 +1329,6 @@ def find_similar_threats():
 @app.route('/api/species_analysis', methods=['POST'])
 def analyze_species():
     try:
-        if not load_data_if_needed():
-            return jsonify({'error': 'Failed to load data'}), 500
-            
         data = request.get_json()
         species_name = data.get('species_name')
         
@@ -1538,12 +1525,12 @@ systemic_analyzer = SystemicRiskAnalyzer()
 @app.route('/api/network_analysis', methods=['POST'])
 def network_analysis():
     try:
-        if not load_data_if_needed():
-            return jsonify({'success': False, 'error': 'Failed to load data'}), 500
-            
         data = request.get_json()
         analysis_type = data.get('analysis_type', 'shared_threats')
         species_list = data.get('species_list', [])
+        
+        if not triplets_data:
+            return jsonify({'success': False, 'error': 'No triplet data loaded'}), 500
         
         species_threats_data = {}
         
@@ -1709,8 +1696,8 @@ def systemic_metrics():
 @app.route('/api/threat_embeddings', methods=['GET'])
 def get_threat_embeddings():
     try:
-        if not load_data_if_needed():
-            return jsonify({'success': False, 'error': 'Failed to load data'}), 500
+        if not triplets_data:
+            return jsonify({'success': False, 'error': 'No triplet data loaded'}), 500
         
         general_subject_terms_to_filter = {'aves', 'bird', 'birds', 'afrotropical bird',
                                           'seabird', 'seabirds', 'waterbird', 'waterbirds',
@@ -2876,9 +2863,12 @@ def generate_research_recommendations(target_species, transfer_candidates, gap_a
     return recommendations
 
 if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
     logger.info("Starting Climate Inaction Analysis Server...")
-    logger.info(f"Data loaded: {len(triplets_data)} triplets.")
+    if not load_data_if_needed():
+        logger.error("Failed to load initial data. Server might not function correctly.")
+    
     if kg_results:
         logger.info(f"KG: {kg_results.get('species_count', 0)} species, {kg_results.get('threat_count', 0)} threats.")
-    logger.info("Server running at http://0.0.0.0:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    logger.info(f"Server running at http://0.0.0.0:{port}")
+    app.run(debug=True, host='0.0.0.0', port=port)
