@@ -5,6 +5,7 @@ matplotlib
 seaborn
 networkx
 nltk
+flask
 python-dotenv
 google-generativeai
 requests
