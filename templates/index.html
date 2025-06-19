@@ -10,25 +10,25 @@
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
     
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=1.3"></script>
     
-    <script src="{{ url_for('static', filename='embeddings_scripts/embeddings_analysis.js') }}"></script>
-    <script src="{{ url_for('static', filename='embeddings_scripts/dim_reduct.js') }}"></script>
-    <script src="{{ url_for('static', filename='embeddings_scripts/clustering.js') }}"></script>
-    <script src="{{ url_for('static', filename='embeddings_scripts/semantic_analysis.js') }}"></script>
-    <script src="{{ url_for('static', filename='embeddings_scripts/cluster_quality_analysis.js') }}"></script>
-    <script src="{{ url_for('static', filename='embeddings_scripts/visualization.js') }}"></script>
-    <script src="{{ url_for('static', filename='embeddings_scripts/click.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/embeddings_analysis.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/dim_reduct.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/clustering.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/semantic_analysis.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/cluster_quality_analysis.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/visualization.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/click.js') }}?v=1.3"></script>
     
-    <script src="{{ url_for('static', filename='chart_util.js') }}"></script>
-    <script src="{{ url_for('static', filename='data_loading.js') }}"></script>
-    <script src="{{ url_for('static', filename='search.js') }}"></script>
-    <script src="{{ url_for('static', filename='analysis.js') }}"></script>
-    <script src="{{ url_for('static', filename='calc_network.js') }}"></script>
-    <script src="{{ url_for('static', filename='visualize_graph.js') }}"></script>
-    <script src="{{ url_for('static', filename='kg_query.js') }}"></script>
-    <script src="{{ url_for('static', filename='kg_transfer.js') }}"></script>
-    <script src="{{ url_for('static', filename='chain_build.js') }}"></script>
+    <script src="{{ url_for('static', filename='chart_util.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='data_loading.js') }}?v=1.4"></script>
+    <script src="{{ url_for('static', filename='search.js') }}?v=1.4"></script>
+    <script src="{{ url_for('static', filename='analysis.js') }}?v=1.4"></script>
+    <script src="{{ url_for('static', filename='calc_network.js') }}?v=1.5"></script>
+    <script src="{{ url_for('static', filename='visualize_graph.js') }}?v=1.6"></script>
+    <script src="{{ url_for('static', filename='kg_query.js') }}?v=1.4"></script>
+    <script src="{{ url_for('static', filename='kg_transfer.js') }}?v=1.3"></script>
+    <script src="{{ url_for('static', filename='chain_build.js') }}?v=1.3"></script>
 </head>
 <body>
     <header>
@@ -133,12 +133,6 @@
                                 <h5>Impact Types and Severity</h5>
                                 <div id="impactAnalysisContainer"></div>
                             </div>
-                            <div class="impact-visualization">
-                                <h5>Threat-Impact Relationships</h5>
-                                <div class="chart-wrapper">
-                                    <canvas id="threatImpactChart"></canvas>
-                                </div>
-                            </div>
                         </section>
 
                         <section class="comprehensive-profile-section">
@@ -154,25 +148,6 @@
             <div class="systemic-container">
                 <h2>Systemic Risk Analysis</h2>
                 
-                <div class="analysis-controls">
-                    <div class="control-group">
-                        <label for="networkAnalysisType">Analysis Type:</label>
-                        <select id="networkAnalysisType">
-                            <option value="shared_threats">Shared Threat Networks</option>
-                            <option value="semantic_similarity">Semantic Threat Similarity</option>
-                            <option value="vulnerability_modules">Vulnerability Modules</option>
-                            <option value="indirect_pathways">Indirect Impact Pathways</option>
-                        </select>
-                        <button id="runNetworkAnalysis">Run Analysis</button>
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="similarityThreshold">Semantic Similarity Threshold:</label>
-                        <input type="range" id="similarityThreshold" min="0.5" max="0.95" step="0.05" value="0.8">
-                        <span id="similarityValue">0.8</span>
-                    </div>
-                </div>
-
                 <div class="systemic-sections">
                     <section class="network-visualization-section">
                         <h3>Ecological Network Visualization</h3>
@@ -190,87 +165,11 @@
                                         <option value="threats">By Threat Count</option>
                                         <option value="uniform">Uniform</option>
                                     </select>
-                                    <label for="edgeWeight">Edge Weight:</label>
-                                    <select id="edgeWeight">
-                                        <option value="similarity">Semantic Similarity</option>
-                                        <option value="shared_threats">Shared Threat Count</option>
-                                        <option value="uniform">Uniform</option>
-                                    </select>
                                 </div>
                             </div>
                             <div id="networkCanvas" class="network-canvas"></div>
                             <div id="networkAnalysisResults" class="analysis-results"></div>
                             <div id="networkLegend" class="network-legend"></div>
-                        </div>
-                    </section>
-
-                    <section class="indirect-impact-detection-section">
-                        <h3>Indirect Impact Detection</h3>
-                        <div class="impact-detection-container">
-                            <div class="detection-controls">
-                                <div class="species-selector-row">
-                                    <label for="focalSpeciesSelect">Focal Species:</label>
-                                    <select id="focalSpeciesSelect">
-                                        <option value="">Select a species...</option>
-                                    </select>
-                                    <button id="findIndirectImpacts">Find Indirect Impacts</button>
-                                </div>
-                                <div class="pathway-controls">
-                                    <label for="maxPathLength">Max Pathway Length:</label>
-                                    <input type="number" id="maxPathLength" min="2" max="5" value="3">
-                                    <label for="impactType">Impact Type:</label>
-                                    <select id="impactType">
-                                        <option value="all">All Impact Types</option>
-                                        <option value="trophic">Trophic Cascades</option>
-                                        <option value="competitive">Competitive Effects</option>
-                                        <option value="mutualistic">Mutualistic Disruption</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="indirectImpactResults" class="impact-results">
-                                <div id="pathwayVisualization" class="pathway-viz"></div>
-                                <div id="pathwayList" class="pathway-list"></div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="knowledge-graph-queries-section">
-                        <h3>Knowledge Graph Queries</h3>
-                        <div class="query-container">
-                            <div class="query-builder">
-                                <div class="predefined-queries">
-                                    <h4>Predefined Queries:</h4>
-                                    <div class="query-buttons">
-                                        <button class="query-btn" data-query="vulnerable_pairs">Find Vulnerable Species Pairs</button>
-                                        <button class="query-btn" data-query="threat_clusters">Analyze Threat Clusters</button>
-                                        <button class="query-btn" data-query="cascade_risks">Identify Cascade Risks</button>
-                                        <button class="query-btn" data-query="keystone_threats">Find Keystone Threats</button>
-                                        <button class="query-btn" data-query="disease_transmission">Find Disease Transmission Networks</button>
-                                    </div>
-                                </div>
-                                <div class="custom-query">
-                                    <h4>Custom Query Builder:</h4>
-                                    <div class="query-form">
-                                        <select id="querySpecies1">
-                                            <option value="">Select Species 1...</option>
-                                        </select>
-                                        <select id="queryRelationship">
-                                            <option value="shares_threat">shares threat with</option>
-                                            <option value="preys_on">preys on</option>
-                                            <option value="competes_with">competes with</option>
-                                            <option value="similar_threat">has similar threat to</option>
-                                        </select>
-                                        <select id="querySpecies2">
-                                            <option value="">Select Species 2...</option>
-                                        </select>
-                                        <button id="executeCustomQuery">Execute Query</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div id="queryResults" class="query-results">
-                                <div id="queryResultsTable"></div>
-                                <div id="queryVisualization"></div>
-                            </div>
                         </div>
                     </section>
 
@@ -282,22 +181,34 @@
                                     <div class="metric-card">
                                         <h4>Network Modularity</h4>
                                         <div class="metric-value" id="modularityValue">-</div>
-                                        <div class="metric-description">Community structure strength</div>
+                                        <div class="metric-description">
+                                            Community structure strength
+                                            <small>Ratio of edges within communities to total edges.</small>
+                                        </div>
                                     </div>
                                     <div class="metric-card">
                                         <h4>Network Nestedness</h4>
                                         <div class="metric-value" id="nestednessValue">-</div>
-                                        <div class="metric-description">Specialist-generalist pattern</div>
+                                        <div class="metric-description">
+                                            Specialist-generalist pattern
+                                            <small>Measures if specialist threats are subsets of generalist threats</small>
+                                        </div>
                                     </div>
                                     <div class="metric-card">
                                         <h4>Ecosystem Vulnerability</h4>
                                         <div class="metric-value" id="ecosystemVulnerability">-</div>
-                                        <div class="metric-description">Overall systemic risk score</div>
+                                        <div class="metric-description">
+                                            Overall systemic risk score
+                                            <small>Composite of avg. threats, density, and vulnerability variation</small>
+                                        </div>
                                     </div>
                                     <div class="metric-card">
                                         <h4>Critical Species Count</h4>
                                         <div class="metric-value" id="criticalSpeciesCount">-</div>
-                                        <div class="metric-description">High-impact species nodes</div>
+                                        <div class="metric-description">
+                                            High-impact species nodes
+                                            <small>Number of species in the top 10% of network connections</small>
+                                        </div>
                                     </div>
                                 </div>
                                 
@@ -443,7 +354,12 @@
                 <h2>Knowledge Transfer</h2>
                 
                 <div class="transfer-description">
-                    <p>Discover potential threats for understudied species by analyzing similar species with more complete threat profiles. This tool identifies knowledge gaps and suggests research priorities based on comparative threat analysis.</p>
+                    <p>Discover potential threats for understudied species by analyzing similar species with more complete threat profiles.</p>
+                    <div class="metric-explanation">
+                        <h4>How It Works:</h4>
+                        <p><strong>Initial Selection:</strong> Species are considered similar if they share a large number of threats with the target species. A combined similarity score (based on shared threat overlap) is used to rank potential source species.</p>
+                        <p><strong>Transferability Score:</strong> For each potential new threat from a similar species, a score (0-1) is calculated based on the strength of evidence (number of studies), the type of threat (broad vs. specific), and the similarity of ecological context if it's mentioned in the abstract. Scores also get additional points if the DOI shows it has been published in past 5 years to target current threats.</p>
+                    </div>
                 </div>
                 
                 <div class="transfer-controls">

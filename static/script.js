@@ -1,7 +1,3 @@
-// Global State Management and Application Initialization
-// Cache-busting comment: Updated 2024-01-XX - Fixed method name and modular structure
-
-// Global Application State
 window.AppState = {
     allTripletsData: [],
     allSpecies: [],
@@ -226,47 +222,6 @@ function setupModalControls() {
 }
 
 function setupSystemicAnalysisListeners() {
-    const runNetworkAnalysis = window.AppUtils.getElement('runNetworkAnalysis');
-    if (runNetworkAnalysis) {
-        runNetworkAnalysis.addEventListener('click', () => {
-            console.log('Running network analysis...');
-            performNetworkAnalysis();
-        });
-    }
-    
-    const findIndirectImpacts = window.AppUtils.getElement('findIndirectImpacts');
-    if (findIndirectImpacts) {
-        findIndirectImpacts.addEventListener('click', () => {
-            console.log('Finding indirect impacts...');
-            performIndirectImpactsAnalysis();
-        });
-    }
-    
-    const executeCustomQuery = window.AppUtils.getElement('executeCustomQuery');
-    if (executeCustomQuery) {
-        executeCustomQuery.addEventListener('click', () => {
-            console.log('Executing custom query...');
-            executeKnowledgeGraphQuery('vulnerability_pathways');
-        });
-    }
-    
-    document.querySelectorAll('.query-btn[data-query]').forEach(button => {
-        button.addEventListener('click', () => {
-            const queryType = button.getAttribute('data-query');
-            console.log('Executing KG query:', queryType);
-            executeKnowledgeGraphQuery(queryType);
-        });
-    });
-    
-    const similarityThreshold = window.AppUtils.getElement('similarityThreshold');
-    if (similarityThreshold) {
-        similarityThreshold.addEventListener('input', () => {
-            const similarityValue = window.AppUtils.getElement('similarityValue');
-            if (similarityValue) {
-                similarityValue.textContent = similarityThreshold.value;
-            }
-        });
-    }
 }
 
 async function loadInitialData() {
@@ -359,6 +314,7 @@ function loadSpeciesProfilingData() {
                 try {
                     populateSpeciesDropdown();
                     setupSpeciesSearch();
+                    populateFocalSpeciesDropdown();
                     console.log('Species profiling ready.');
                 } catch (error) {
                     console.error('Error setting up species UI:', error);
@@ -433,6 +389,47 @@ function populateSpeciesDropdown() {
         option.textContent = speciesName;
         speciesDropdown.appendChild(option);
     });
+}
+
+function populateFocalSpeciesDropdown() {
+    const focalSpeciesSelect = document.getElementById('focalSpeciesSelect');
+    
+    console.log('Attempting to populate focal species dropdown...');
+    console.log('focalSpeciesSelect element:', focalSpeciesSelect);
+    console.log('window.AppState.allSpecies:', window.AppState.allSpecies);
+    
+    if (!focalSpeciesSelect) {
+        console.error('focalSpeciesSelect element not found.');
+        return;
+    }
+    
+    if (!window.AppState.allSpecies || window.AppState.allSpecies.length === 0) {
+        console.error('No species data available.');
+        setTimeout(() => {
+            if (window.AppState.allSpecies && window.AppState.allSpecies.length > 0) {
+                console.log('Retrying focal species dropdown population...');
+                populateFocalSpeciesDropdown();
+            }
+        }, 500);
+        return;
+    }
+    
+    focalSpeciesSelect.innerHTML = '<option value="">Select a species...</option>';
+    
+    const sortedSpecies = window.AppState.allSpecies
+        .map(species => species.name)
+        .sort();
+    
+    const limitedSpecies = sortedSpecies.slice(0, 100);
+    
+    limitedSpecies.forEach(speciesName => {
+        const option = document.createElement('option');
+        option.value = speciesName;
+        option.textContent = speciesName;
+        focalSpeciesSelect.appendChild(option);
+    });
+    
+    console.log(`Successfully populated focal species dropdown with ${limitedSpecies.length} species.`);
 }
 
 async function analyzeSpecies() {
@@ -596,8 +593,8 @@ function renderComprehensiveProfile(profileData) {
     
     let profileHtml = `
         <div class="profile-section">
-            <h5>Threat-Impact Signature</h5>
-            <p>Probabilistic assessment of expected impacts for each threat category:</p>
+            <h5>Threat-Impact</h5>
+            <p>The idea here is that for each category of threat, we can see what proportion of the threats lead to what impact in the triplets:</p>
             <div class="threat-impact-matrix">
                 ${Object.entries(profileData.threat_impact_probabilities || {}).map(([threat, impacts]) => 
                     Object.entries(impacts).map(([impact, probability]) => `
@@ -645,50 +642,6 @@ function renderSpeciesCharts(data) {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { legend: { position: 'bottom' } }
-            }
-        });
-    }
-    
-    const threatImpactChartCtx = window.AppUtils.getElement('threatImpactChartCtx');
-    if (threatImpactChartCtx && data.comprehensive_profile?.threat_impact_probabilities) {
-        if (window.AppState.charts.threatImpactChart) {
-            window.AppState.charts.threatImpactChart.destroy();
-        }
-        
-        const chartData = [];
-        Object.entries(data.comprehensive_profile.threat_impact_probabilities).forEach(([threat, impacts]) => {
-            Object.entries(impacts).forEach(([impact, probability]) => {
-                chartData.push({ threat: threat, impact: impact, probability: probability });
-            });
-        });
-        
-        window.AppState.charts.threatImpactChart = new Chart(threatImpactChartCtx, {
-            type: 'scatter',
-            data: {
-                datasets: [{
-                    label: 'Threat-Impact Relationships',
-                    data: chartData.map((item, index) => ({
-                        x: index,
-                        y: item.probability,
-                        label: `${item.threat} → ${item.impact}`
-                    })),
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, max: 1, title: { display: true, text: 'Impact Probability' } },
-                    x: { title: { display: true, text: 'Threat-Impact Pairs' } }
-                },
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => `${context.raw.label}: ${(context.raw.y * 100).toFixed(1)}%`
-                        }
-                    }
-                }
             }
         });
     }
@@ -746,15 +699,39 @@ function performSearch() {
 }
 
 function initializeTabs() {
-    console.log('initializeTabs needs to be implemented by search.js');
+    const tabs = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+    let systemicAnalysisHasRun = false;
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            const targetTab = tab.getAttribute('data-tab');
+            tabContents.forEach(content => {
+                if (content.id === `${targetTab}Tab`) {
+                    content.classList.add('active');
+                } else {
+                    content.classList.remove('active');
+                }
+            });
+
+            if (targetTab === 'systemic' && !systemicAnalysisHasRun) {
+                console.log('Systemic tab opened, running analysis...');
+                if (typeof performNetworkAnalysis === 'function') {
+                    performNetworkAnalysis();
+                    systemicAnalysisHasRun = true;
+                } else {
+                    console.error('performNetworkAnalysis function not found.');
+                }
+            }
+        });
+    });
 }
 
 function processAndRenderCharts(data) {
     console.log('processAndRenderCharts needs to be implemented by chart_util.js');
-}
-
-function performNetworkAnalysis() {
-    console.log('performNetworkAnalysis needs to be implemented by analysis.js');
 }
 
 function performIndirectImpactsAnalysis() {
@@ -768,6 +745,3 @@ function executeKnowledgeGraphQuery(queryType) {
 function toggleChainMode() {
     console.log('toggleChainMode needs to be implemented by chain_build.js');
 }
-
-// The rest of the functions will be loaded from other modules
-// This provides the foundation for the modular structure

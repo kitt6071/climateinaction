@@ -26,16 +26,27 @@
         }
         
         this.showLoadingIndicator('Generating labels...');
+        this.clusterLabels = [];
         
         try {
             const clusterStats = this.calculateClusterStatistics();
-            
-            for (const [clusterId, threats] of Object.entries(clusterStats.clusterThreats)) {
-                const species = clusterStats.clusterSpecies[clusterId];
-                const predicates = clusterStats.clusterPredicates[clusterId];
-                const label = await this.generateClusterLabel(threats, species, predicates);
-                this.clusterLabels.set(parseInt(clusterId), label);
+            const labelPromises = [];
+
+            for (const clusterId in clusterStats.clusterThreats) {
+                if (clusterStats.clusterThreats.hasOwnProperty(clusterId)) {
+                    const threats = clusterStats.clusterThreats[clusterId];
+                    const species = clusterStats.clusterSpecies[clusterId];
+                    const predicates = clusterStats.clusterPredicates[clusterId];
+                    
+                    const promise = this.generateClusterLabel(threats, species, predicates)
+                        .then(label => {
+                            this.clusterLabels[parseInt(clusterId)] = label;
+                        });
+                    labelPromises.push(promise);
+                }
             }
+
+            await Promise.all(labelPromises);
             
             this.displayClusterLabels();
             this.hideLoadingIndicator();

@@ -9,21 +9,12 @@
     async function performNetworkAnalysis() {
         try {
             console.log('Performing network analysis...');
-            let kg = window.AppState.knowledgeGraph;
+            const kg = window.AppState.knowledgeGraph;
 
-            if (!kg || !kg.nodes || kg.nodes.size === 0) {
-                console.log('Knowledge graph not initialized, creating from triplet data...');
-                kg = createBasicKnowledgeGraph();
-                if (!kg || !kg.nodes || kg.nodes.size === 0) {
-                    throw new Error('No data available for network analysis.');
-                }
-                console.log(`Basic knowledge graph created: ${kg.nodes.size} nodes`);
-            } else {
-                console.log(`Using existing knowledge graph: ${kg.nodes.size} nodes`);
-            }
-
-            if (kg.nodes.size > 15000) {
-                throw new Error(`Network too large for analysis (${kg.nodes.size} nodes). Max: 15000.`);
+            if (!kg || kg.nodes.size === 0) {
+                console.error('Knowledge graph not initialized or is empty. Cannot perform network analysis.');
+                displayAnalysisError('Network Analysis', 'Knowledge graph is not ready. Please wait for data to load.');
+                return; 
             }
 
             const edgeCount = kg.edges ? (kg.edges.size || kg.edges.length || 0) : 0;
@@ -39,6 +30,17 @@
 
             window.AppState.analysis.networkAnalysis = analysisResults;
             displayNetworkAnalysisResults(analysisResults);
+            
+            if (typeof createEcologicalNetworkVisualization === 'function') {
+                createEcologicalNetworkVisualization();
+            } else {
+                console.error('createEcologicalNetworkVisualization is not defined.');
+            }
+            
+            if (typeof calculateSystemicRiskMetrics === 'function') {
+                calculateSystemicRiskMetrics();
+            }
+            
             console.log('Network analysis completed.');
             return analysisResults;
 
@@ -721,9 +723,6 @@
     }
 
     window.performNetworkAnalysis = performNetworkAnalysis;
-    window.performCriticalNodesAnalysis = performCriticalNodesAnalysis;
-    window.identifyVulnerabilityCorridors = identifyVulnerabilityCorridors;
-    window.performIndirectImpactsAnalysis = performIndirectImpactsAnalysis;
 
     if (window.AppFunctions) {
         Object.assign(window.AppFunctions, {

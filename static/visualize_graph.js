@@ -84,9 +84,9 @@ function displayKnowledgeGraphResults(results, queryType) {
 function displayNetworkSummary() {
     const speciesConnections = new Map();
     
-    knowledgeGraph.edges.forEach(edge => {
+    window.knowledgeGraph.edges.forEach(edge => {
         if (edge.type === 'HAS_THREAT') {
-            const speciesNode = knowledgeGraph.nodes.get(edge.source);
+            const speciesNode = window.knowledgeGraph.nodes.get(edge.source);
             if (speciesNode) {
                 const count = speciesConnections.get(speciesNode.name) || 0;
                 speciesConnections.set(speciesNode.name, count + 1);
@@ -119,10 +119,10 @@ function displayNetworkSummary() {
     
     html += `<p><strong>Network Summary:</strong></p>`;
     html += `<ul>`;
-    html += `<li>Total Species: ${knowledgeGraph.speciesNodes.size}</li>`;
-    html += `<li>Total Threats: ${knowledgeGraph.threatNodes.size}</li>`;
-    html += `<li>Total Impacts: ${knowledgeGraph.impactNodes.size}</li>`;
-    html += `<li>Total Connections: ${knowledgeGraph.edges.size}</li>`;
+    html += `<li>Total Species: ${window.knowledgeGraph.speciesNodes.size}</li>`;
+    html += `<li>Total Threats: ${window.knowledgeGraph.threatNodes.size}</li>`;
+    html += `<li>Total Impacts: ${window.knowledgeGraph.impactNodes.size}</li>`;
+    html += `<li>Total Connections: ${window.knowledgeGraph.edges.size}</li>`;
     html += `</ul>`;
     html += '</div>';
     
@@ -299,34 +299,49 @@ function createSpeciesPairsVisualization(g, results, width, height) {
 
 function createVulnerabilityVisualization(g, results, width, height) {
     const nodes = results.map(result => ({
-        id: result.species,
-        name: result.species,
-        vulnerability_score: result.vulnerability_score,
-        connected_count: result.connected_species_count,
-        connected_species: result.connected_species
+        id: result.species || result.species1 || 'Unknown',
+        name: result.species || result.species1 || 'Unknown',
+        vulnerability_score: result.vulnerability_score || result.confidence || 0.5,
+        connected_count: result.connected_species_count || result.species_count || 1,
+        connected_species: result.connected_species || []
     }));
     
     const centerX = width / 2;
     const centerY = height / 2;
     const maxRadius = Math.min(width, height) / 3;
     
+    const maxVulnerability = Math.max(...nodes.map(n => n.vulnerability_score || 0));
+    const safeMaxVulnerability = maxVulnerability > 0 ? maxVulnerability : 1;
+    
     nodes.forEach((node, index) => {
         const angle = (index / nodes.length) * 2 * Math.PI;
-        const radius = (node.vulnerability_score / Math.max(...nodes.map(n => n.vulnerability_score))) * maxRadius;
+        const normalizedScore = (node.vulnerability_score || 0) / safeMaxVulnerability;
+        const radius = normalizedScore * maxRadius * 0.8 + maxRadius * 0.2;
+        
         node.x = centerX + Math.cos(angle) * radius;
         node.y = centerY + Math.sin(angle) * radius;
+        
+        // Ensure coordinates are valid numbers
+        if (isNaN(node.x) || isNaN(node.y)) {
+            node.x = centerX + Math.cos(angle) * maxRadius * 0.5;
+            node.y = centerY + Math.sin(angle) * maxRadius * 0.5;
+        }
     });
     
     const node = g.append('g')
         .selectAll('circle')
         .data(nodes)
         .enter().append('circle')
-        .attr('cx', d => d.x)
-        .attr('cy', d => d.y)
-        .attr('r', d => 5 + Math.sqrt(d.connected_count) * 2)
+        .attr('cx', d => isNaN(d.x) ? centerX : d.x)
+        .attr('cy', d => isNaN(d.y) ? centerY : d.y)
+        .attr('r', d => {
+            const radius = 5 + Math.sqrt(d.connected_count || 1) * 2;
+            return isNaN(radius) ? 7 : radius;
+        })
         .attr('fill', d => {
-            const intensity = d.vulnerability_score / Math.max(...nodes.map(n => n.vulnerability_score));
-            return d3.interpolateReds(0.3 + intensity * 0.7);
+            const intensity = (d.vulnerability_score || 0) / safeMaxVulnerability;
+            const safeIntensity = isNaN(intensity) ? 0.5 : Math.min(Math.max(intensity, 0), 1);
+            return d3.interpolateReds(0.3 + safeIntensity * 0.7);
         })
         .attr('stroke', '#000')
         .attr('stroke-width', 1);
@@ -335,10 +350,13 @@ function createVulnerabilityVisualization(g, results, width, height) {
         .selectAll('text')
         .data(nodes)
         .enter().append('text')
-        .attr('x', d => d.x)
-        .attr('y', d => d.y - 15)
+        .attr('x', d => isNaN(d.x) ? centerX : d.x)
+        .attr('y', d => isNaN(d.y) ? centerY - 15 : d.y - 15)
         .attr('text-anchor', 'middle')
-        .text(d => d.name.length > 12 ? d.name.substring(0, 9) + '...' : d.name)
+        .text(d => {
+            const name = d.name || 'Unknown';
+            return name.length > 12 ? name.substring(0, 9) + '...' : name;
+        })
         .style('font-size', '9px')
         .style('pointer-events', 'none');
     
@@ -346,10 +364,13 @@ function createVulnerabilityVisualization(g, results, width, height) {
         .selectAll('text')
         .data(nodes)
         .enter().append('text')
-        .attr('x', d => d.x)
-        .attr('y', d => d.y + 4)
+        .attr('x', d => isNaN(d.x) ? centerX : d.x)
+        .attr('y', d => isNaN(d.y) ? centerY + 4 : d.y + 4)
         .attr('text-anchor', 'middle')
-        .text(d => d.vulnerability_score.toFixed(0))
+        .text(d => {
+            const score = d.vulnerability_score || 0;
+            return isNaN(score) ? '0' : score.toFixed(1);
+        })
         .style('font-size', '8px')
         .style('fill', '#fff')
         .style('font-weight', 'bold')
@@ -376,9 +397,19 @@ function createSystemicRiskCharts() {
     createThreatPropagationChart();
 }
 
+
 function createVulnerabilityDistributionChart() {
     const ctx = document.getElementById('vulnerabilityDistributionChart');
-    if (!ctx || typeof Chart === 'undefined') return;
+    if (!ctx || typeof Chart === 'undefined') {
+        console.log('Chart context or Chart.js not available');
+        return;
+    }
+    
+    const knowledgeGraph = window.knowledgeGraph || window.AppState?.knowledgeGraph;
+    if (!knowledgeGraph || !knowledgeGraph.speciesNodes || !knowledgeGraph.edges) {
+        console.log('Knowledge graph not available for vulnerability chart');
+        return;
+    }
     
     const vulnerabilityBins = [0, 0, 0, 0, 0];
     const binLabels = ['0-2', '3-5', '6-10', '11-20', '20+'];
@@ -386,7 +417,7 @@ function createVulnerabilityDistributionChart() {
     knowledgeGraph.speciesNodes.forEach(speciesNode => {
         let threatCount = 0;
         knowledgeGraph.edges.forEach(edge => {
-            if (edge.type === 'HAS_THREAT' && edge.source === speciesNode.id) {
+            if (edge.type === 'EXPERIENCES_IMPACT' && edge.source === speciesNode.id) {
                 threatCount++;
             }
         });
@@ -398,11 +429,11 @@ function createVulnerabilityDistributionChart() {
         else vulnerabilityBins[4]++;
     });
     
-    if (vulnerabilityDistributionChartInstance) {
-        vulnerabilityDistributionChartInstance.destroy();
+    if (window.vulnerabilityDistributionChartInstance) {
+        window.vulnerabilityDistributionChartInstance.destroy();
     }
     
-    vulnerabilityDistributionChartInstance = new Chart(ctx, {
+    window.vulnerabilityDistributionChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: binLabels,
@@ -449,17 +480,33 @@ function createVulnerabilityDistributionChart() {
 
 function createThreatPropagationChart() {
     const ctx = document.getElementById('threatPropagationChart');
-    if (!ctx || typeof Chart === 'undefined') return;
+    if (!ctx || typeof Chart === 'undefined') {
+        console.log('Chart context or Chart.js not available');
+        return;
+    }
+    
+    const knowledgeGraph = window.knowledgeGraph || window.AppState?.knowledgeGraph;
+    if (!knowledgeGraph || !knowledgeGraph.nodes || !knowledgeGraph.edges) {
+        console.log('Knowledge graph not available for threat propagation chart');
+        return;
+    }
     
     const impactCategories = new Map();
     
     knowledgeGraph.edges.forEach(edge => {
         if (edge.type === 'EXPERIENCES_IMPACT') {
             const impactNode = knowledgeGraph.nodes.get(edge.target);
-            const count = impactCategories.get(impactNode.name) || 0;
-            impactCategories.set(impactNode.name, count + 1);
+            if (impactNode && impactNode.name) {
+                const count = impactCategories.get(impactNode.name) || 0;
+                impactCategories.set(impactNode.name, count + 1);
+            }
         }
     });
+    
+    if (impactCategories.size === 0) {
+        console.log('No impact categories found for chart');
+        return;
+    }
     
     const topImpacts = Array.from(impactCategories.entries())
         .sort((a, b) => b[1] - a[1])
@@ -468,11 +515,11 @@ function createThreatPropagationChart() {
     const labels = topImpacts.map(([impact, _]) => impact.length > 20 ? impact.substring(0, 17) + '...' : impact);
     const data = topImpacts.map(([_, count]) => count);
     
-    if (threatPropagationChartInstance) {
-        threatPropagationChartInstance.destroy();
+    if (window.threatPropagationChartInstance) {
+        window.threatPropagationChartInstance.destroy();
     }
     
-    threatPropagationChartInstance = new Chart(ctx, {
+    window.threatPropagationChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: labels,
@@ -503,6 +550,13 @@ function createThreatPropagationChart() {
         }
     });
 }
+
+window.networkVisState = {
+    simulation: null,
+    svg: null,
+    zoom: null,
+    isPhysicsOn: true
+};
 
 function createEcologicalNetworkVisualization() {
     d3.select('#networkCanvas').selectAll('*').remove();
@@ -535,6 +589,10 @@ function createEcologicalNetworkVisualization() {
         });
     
     svg.call(zoom);
+    
+    // Store state
+    window.networkVisState.svg = svg;
+    window.networkVisState.zoom = zoom;
     
     const g = svg.append('g');
     
@@ -589,6 +647,8 @@ function createEcologicalNetworkVisualization() {
         .force('charge', d3.forceManyBody().strength(-150))
         .force('center', d3.forceCenter(width / 2, height / 2))
         .force('collision', d3.forceCollide().radius(20));
+    
+    window.networkVisState.simulation = simulation;
     
     const link = g.append('g')
         .selectAll('line')
@@ -670,7 +730,57 @@ function createEcologicalNetworkVisualization() {
         event.subject.fx = null;
         event.subject.fy = null;
     }
+
+    d3.select('#centerNetwork').on('click', centerNetwork);
+    d3.select('#togglePhysics').on('click', togglePhysics);
+    d3.select('#exportNetwork').on('click', exportNetwork);
+    d3.select('#nodeSize').on('change', createEcologicalNetworkVisualization);
+    d3.select('#edgeWeight').on('change', createEcologicalNetworkVisualization);
 }
+
+function centerNetwork() {
+    const { svg, zoom } = window.networkVisState;
+    if (svg && zoom) {
+        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+    }
+}
+
+function togglePhysics() {
+    const { simulation } = window.networkVisState;
+    if (simulation) {
+        if (window.networkVisState.isPhysicsOn) {
+            simulation.stop();
+            d3.select('#togglePhysics').text('Resume Physics');
+        } else {
+            simulation.alpha(0.3).restart();
+            d3.select('#togglePhysics').text('Pause Physics');
+        }
+        window.networkVisState.isPhysicsOn = !window.networkVisState.isPhysicsOn;
+    }
+}
+
+function exportNetwork() {
+    const { svg } = window.networkVisState;
+    if (svg) {
+        const svgData = svg.node().outerHTML;
+        const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'ecological_network.svg';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+
+window.addEventListener('knowledgeGraphReady', function(event) {
+    console.log('Knowledge graph ready, creating systemic risk charts and network visualization');
+    setTimeout(() => {
+        createSystemicRiskCharts();
+        createEcologicalNetworkVisualization();
+    }, 100);
+});
 
 window.displayKnowledgeGraphResults = displayKnowledgeGraphResults;
 window.displayNetworkSummary = displayNetworkSummary;

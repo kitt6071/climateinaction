@@ -67,13 +67,18 @@
         
         const kg = {
             nodes: new Map(),
-            edges: [],
+            edges: new Map(),
+            speciesNodes: new Map(),
+            threatNodes: new Map(),
             species: new Set(),
             threats: new Set(),
             impacts: new Set(),
             semanticClusters: new Map()
         };
         window.AppState.knowledgeGraph = kg;
+        window.knowledgeGraph = kg;
+        
+        console.log(`Processing full dataset: ${tripletData.length} triplets for systemic metrics`);
         
         tripletData.forEach((triplet, index) => {
             const { subject: species, predicate: threat, object: impact } = triplet;
@@ -87,21 +92,35 @@
             const impactNodeId = `impact_${impact}`;
             
             if (!kg.nodes.has(speciesNodeId)) {
-                kg.nodes.set(speciesNodeId, { id: speciesNodeId, label: species, type: 'species', threatCount: 0, connections: new Set() });
+                const speciesNode = { id: speciesNodeId, name: species, type: 'Species', threatCount: 0, connections: new Set(), properties: { description: species } };
+                kg.nodes.set(speciesNodeId, speciesNode);
+                kg.speciesNodes.set(speciesNodeId, speciesNode);
             }
             
             if (!kg.nodes.has(threatNodeId)) {
-                kg.nodes.set(threatNodeId, { id: threatNodeId, label: threat, type: 'threat', speciesCount: 0, connections: new Set() });
+                const threatNode = { id: threatNodeId, name: threat, type: 'Threat', speciesCount: 0, connections: new Set(), properties: { description: threat } };
+                kg.nodes.set(threatNodeId, threatNode);
+                kg.threatNodes.set(threatNodeId, threatNode);
             }
             
             if (!kg.nodes.has(impactNodeId)) {
-                kg.nodes.set(impactNodeId, { id: impactNodeId, label: impact, type: 'impact', frequency: 0, connections: new Set() });
+                const impactNode = { id: impactNodeId, name: impact, type: 'Impact', frequency: 0, connections: new Set(), properties: { description: impact } };
+                kg.nodes.set(impactNodeId, impactNode);
             }
             
-            kg.edges.push(
-                { id: `edge_${index}_st`, source: speciesNodeId, target: threatNodeId, type: 'affected_by', weight: 1, doi: triplet.doi },
-                { id: `edge_${index}_ti`, source: threatNodeId, target: impactNodeId, type: 'causes', weight: 1, doi: triplet.doi }
-            );
+            // Add edges that match what the query functions expect
+            const edgeKey1 = `${speciesNodeId}_${impactNodeId}`;
+            if (!kg.edges.has(edgeKey1)) {
+                kg.edges.set(edgeKey1, { 
+                    id: `edge_${index}_si`, 
+                    source: speciesNodeId, 
+                    target: impactNodeId, 
+                    type: 'EXPERIENCES_IMPACT', 
+                    weight: 1, 
+                    doi: triplet.doi,
+                    properties: { predicate: threat }
+                });
+            }
             
             const speciesNode = kg.nodes.get(speciesNodeId);
             speciesNode.threatCount++;
@@ -118,7 +137,7 @@
         
         generateSemanticClusters();
         
-        console.log(`Knowledge graph initialized: ${kg.nodes.size} nodes, ${kg.edges.length} edges.`);
+        console.log(`Knowledge graph initialized: ${kg.nodes.size} nodes, ${kg.edges.size} edges.`);
         window.dispatchEvent(new CustomEvent('knowledgeGraphReady', { detail: { knowledgeGraph: kg } }));
     }
 
@@ -230,10 +249,10 @@
         
         const networkMetrics = {
             totalNodes: kg.nodes.size,
-            totalEdges: kg.edges.length,
-            avgConnectivity: kg.nodes.size > 0 ? kg.edges.length / kg.nodes.size : 0,
+            totalEdges: kg.edges.size,
+            avgConnectivity: kg.nodes.size > 0 ? kg.edges.size / kg.nodes.size : 0,
             clusteringCoefficient: calculateClusteringCoefficient(kg),
-            networkDensity: kg.nodes.size > 1 ? (2 * kg.edges.length) / (kg.nodes.size * (kg.nodes.size - 1)) : 0
+            networkDensity: kg.nodes.size > 1 ? (2 * kg.edges.size) / (kg.nodes.size * (kg.nodes.size - 1)) : 0
         };
 
         return { criticalSpecies, vulnerabilityCorridors: [], cascadeRisks: [], networkMetrics };

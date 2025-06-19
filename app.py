@@ -478,6 +478,319 @@ class EnhancedKnowledgeGraph:
         
         return self.embeddings_cache[species_name]
 
+class EcologicalKnowledgeProcessor:
+    def __init__(self):
+        self.iucn_threats = self._initialize_iucn_classification()
+        self.iucn_stresses = self._initialize_stress_classification()
+        self.impact_patterns = self._initialize_impact_patterns()
+        
+    def _initialize_iucn_classification(self):
+        return {
+            '1': {'category': 'Residential & commercial development', 'subcategories': {
+                '1.1': 'Housing & urban areas',
+                '1.2': 'Commercial & industrial areas',
+                '1.3': 'Tourism & recreation areas'
+            }},
+            '2': {'category': 'Agriculture & aquaculture', 'subcategories': {
+                '2.1': 'Annual & perennial non-timber crops',
+                '2.2': 'Wood & pulp plantations',
+                '2.3': 'Livestock farming & ranching',
+                '2.4': 'Marine & freshwater aquaculture'
+            }},
+            '3': {'category': 'Energy production & mining', 'subcategories': {
+                '3.1': 'Oil & gas drilling',
+                '3.2': 'Mining & quarrying',
+                '3.3': 'Renewable energy'
+            }},
+            '4': {'category': 'Transportation & service corridors', 'subcategories': {
+                '4.1': 'Roads & railroads',
+                '4.2': 'Utility & service lines',
+                '4.3': 'Shipping lanes',
+                '4.4': 'Flight paths'
+            }},
+            '5': {'category': 'Biological resource use', 'subcategories': {
+                '5.1': 'Hunting & collecting terrestrial animals',
+                '5.2': 'Gathering terrestrial plants',
+                '5.3': 'Logging & wood harvesting',
+                '5.4': 'Fishing & harvesting aquatic resources'
+            }},
+            '6': {'category': 'Human intrusions & disturbance', 'subcategories': {
+                '6.1': 'Recreational activities',
+                '6.2': 'War, civil unrest & military exercises',
+                '6.3': 'Work & other activities'
+            }},
+            '7': {'category': 'Natural system modifications', 'subcategories': {
+                '7.1': 'Fire & fire suppression',
+                '7.2': 'Dams & water management/use',
+                '7.3': 'Other ecosystem modifications'
+            }},
+            '8': {'category': 'Invasive & other problematic species', 'subcategories': {
+                '8.1': 'Invasive non-native/alien species/diseases',
+                '8.2': 'Problematic native species/diseases',
+                '8.3': 'Introduced genetic material',
+                '8.4': 'Problematic species/diseases of unknown origin',
+                '8.5': 'Viral/prion-induced diseases',
+                '8.6': 'Diseases of unknown cause'
+            }},
+            '9': {'category': 'Pollution', 'subcategories': {
+                '9.1': 'Domestic & urban waste water',
+                '9.2': 'Industrial & military effluents',
+                '9.3': 'Agricultural & forestry effluents',
+                '9.4': 'Garbage & solid waste',
+                '9.5': 'Air-borne pollutants',
+                '9.6': 'Excess energy'
+            }},
+            '10': {'category': 'Geological events', 'subcategories': {
+                '10.1': 'Volcanoes',
+                '10.2': 'Earthquakes/tsunamis',
+                '10.3': 'Avalanches/landslides'
+            }},
+            '11': {'category': 'Climate change & severe weather', 'subcategories': {
+                '11.1': 'Habitat shifting & alteration',
+                '11.2': 'Droughts',
+                '11.3': 'Temperature extremes',
+                '11.4': 'Storms & flooding',
+                '11.5': 'Other impacts'
+            }},
+            '12': {'category': 'Other options', 'subcategories': {
+                '12.1': 'Other threat'
+            }}
+        }
+    
+    def _initialize_stress_classification(self):
+        return {
+            'ecosystem_conversion': 'Complete habitat loss',
+            'ecosystem_degradation': 'Habitat quality decline',
+            'indirect_ecosystem_effects': 'Secondary habitat impacts',
+            'species_mortality': 'Direct species killing',
+            'species_disturbance': 'Behavioral disruption',
+            'reduced_reproductive_success': 'Breeding impacts',
+            'reduced_recruit_survival': 'Juvenile survival',
+            'competition': 'Interspecific competition',
+            'predation': 'Predation pressure',
+            'poisoning': 'Toxic exposure',
+            'disease': 'Pathogenic impacts',
+            'genetic_effects': 'Genetic diversity loss',
+            'hybridization': 'Genetic pollution'
+        }
+    
+    def _initialize_impact_patterns(self):
+        return {
+            'magnitude_patterns': [
+                r'\b(severe|major|significant|substantial|extensive|massive|dramatic)\b',
+                r'\b(moderate|limited|minor|slight|small|reduced)\b',
+                r'\b(complete|total|entire|whole|full)\b',
+                r'\b(partial|some|certain|specific)\b'
+            ],
+            'causality_patterns': [
+                r'\b(cause[sd]?|lead[s]? to|result[s]? in|trigger[s]?|induce[s]?)\b',
+                r'\b(due to|because of|as a result of|owing to)\b',
+                r'\b(contribute[s]? to|influence[s]?|affect[s]?|impact[s]?)\b'
+            ],
+            'temporal_patterns': [
+                r'\b(immediate|instant|rapid|quick|sudden)\b',
+                r'\b(gradual|slow|progressive|chronic|long-term)\b',
+                r'\b(annual|seasonal|periodic|cyclic)\b',
+                r'\b(historic|past|recent|current|ongoing)\b'
+            ],
+            'directness_patterns': [
+                r'\b(direct[ly]?|immediate[ly]?|straight|explicit)\b',
+                r'\b(indirect[ly]?|secondary|consequent|mediated)\b',
+                r'\b(cascading|knock-on|ripple|downstream)\b'
+            ]
+        }
+
+    def classify_threat_to_iucn(self, threat_text):
+        threat_lower = threat_text.lower()
+        
+        category_keywords = {
+            '1': ['urban', 'housing', 'development', 'commercial', 'industrial', 'tourism', 'recreation'],
+            '2': ['agriculture', 'farming', 'livestock', 'aquaculture', 'plantation', 'crops'],
+            '3': ['mining', 'oil', 'gas', 'drilling', 'renewable', 'energy', 'quarrying'],
+            '4': ['road', 'railroad', 'transport', 'shipping', 'utility', 'corridor'],
+            '5': ['hunting', 'fishing', 'harvesting', 'logging', 'collecting', 'exploitation'],
+            '6': ['recreation', 'disturbance', 'human', 'war', 'military'],
+            '7': ['fire', 'dam', 'water management', 'ecosystem modification'],
+            '8': ['invasive', 'alien', 'disease', 'pathogen', 'introduced'],
+            '9': ['pollution', 'contamination', 'waste', 'chemical', 'toxic'],
+            '10': ['volcano', 'earthquake', 'landslide', 'geological'],
+            '11': ['climate', 'temperature', 'weather', 'drought', 'storm', 'flood'],
+            '12': ['other', 'unknown', 'unspecified']
+        }
+        
+        best_match = None
+        best_score = 0
+        
+        for category, keywords in category_keywords.items():
+            score = sum(1 for keyword in keywords if keyword in threat_lower)
+            if score > best_score:
+                best_score = score
+                best_match = category
+        
+        confidence = min(best_score / 3.0, 1.0)
+        
+        return {
+            'category': best_match,
+            'confidence': confidence,
+            'category_name': self.iucn_threats.get(best_match, {}).get('category', 'Unknown') if best_match else 'Unclassified'
+        }
+
+    def analyze_impact_statement(self, statement):
+        if not statement:
+            return {}
+        
+        statement_lower = statement.lower()
+        
+        magnitude = self._extract_magnitude(statement)
+        
+        causality = self._extract_causality(statement)
+        
+        temporality = self._extract_temporality(statement)
+        
+        directness = self._extract_directness(statement)
+        
+        mechanisms = self._extract_mechanisms(statement)
+        
+        confidence = self._calculate_analysis_confidence(statement)
+        
+        impact_outcomes = self._extract_impact_outcomes(statement)
+        
+        return {
+            'magnitude': magnitude,
+            'causality': causality,
+            'temporality': temporality,
+            'directness': directness,
+            'mechanisms': mechanisms,
+            'impact_outcomes': impact_outcomes,
+            'confidence': confidence,
+            'iucn_classification': self.classify_threat_to_iucn(statement),
+            'processed_statement': statement
+        }
+    
+    def _extract_impact_outcomes(self, text):
+        text_lower = text.lower()
+        outcomes = []
+        
+        outcome_patterns = {
+            'population_decline': ['population decline', 'population decrease', 'population reduction', 'decline in population'],
+            'mortality': ['mortality', 'death', 'killing', 'die', 'died', 'dies'],
+            'habitat_loss': ['habitat loss', 'habitat destruction', 'habitat degradation', 'loss of habitat'],
+            'breeding_failure': ['breeding failure', 'nesting failure', 'reproduction failure', 'failed breeding'],
+            'displacement': ['displacement', 'forced migration', 'abandonment', 'relocate'],
+            'stress': ['stress', 'physiological stress', 'behavioral stress'],
+            'reduced_fitness': ['reduced fitness', 'fitness decline', 'lower fitness'],
+            'extinction': ['extinction', 'extirpation', 'local extinction']
+        }
+        
+        for outcome_type, patterns in outcome_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    outcomes.append({
+                        'type': outcome_type,
+                        'pattern': pattern,
+                        'confidence': 0.8
+                    })
+                    break
+        
+        return outcomes
+    
+    def _extract_magnitude(self, text):
+        high_magnitude = ['severe', 'major', 'significant', 'substantial', 'extensive', 'massive', 'dramatic', 'complete', 'total']
+        medium_magnitude = ['moderate', 'noticeable', 'considerable', 'partial']
+        low_magnitude = ['minor', 'slight', 'small', 'limited', 'minimal']
+        
+        for word in high_magnitude:
+            if word in text:
+                return {'level': 'high', 'indicators': [word]}
+        for word in medium_magnitude:
+            if word in text:
+                return {'level': 'medium', 'indicators': [word]}
+        for word in low_magnitude:
+            if word in text:
+                return {'level': 'low', 'indicators': [word]}
+        
+        return {'level': 'unknown', 'indicators': []}
+    
+    def _extract_causality(self, text):
+        strong_causal = ['cause', 'lead to', 'result in', 'trigger', 'induce']
+        weak_causal = ['contribute to', 'influence', 'affect', 'impact']
+        
+        for phrase in strong_causal:
+            if phrase in text:
+                return {'strength': 'strong', 'indicators': [phrase]}
+        for phrase in weak_causal:
+            if phrase in text:
+                return {'strength': 'weak', 'indicators': [phrase]}
+        
+        return {'strength': 'unknown', 'indicators': []}
+    
+    def _extract_temporality(self, text):
+        immediate = ['immediate', 'instant', 'rapid', 'quick', 'sudden']
+        gradual = ['gradual', 'slow', 'progressive', 'chronic', 'long-term']
+        periodic = ['annual', 'seasonal', 'periodic', 'cyclic']
+        
+        for word in immediate:
+            if word in text:
+                return {'pattern': 'immediate', 'indicators': [word]}
+        for word in gradual:
+            if word in text:
+                return {'pattern': 'gradual', 'indicators': [word]}
+        for word in periodic:
+            if word in text:
+                return {'pattern': 'periodic', 'indicators': [word]}
+        
+        return {'pattern': 'unknown', 'indicators': []}
+    
+    def _extract_directness(self, text):
+        direct_indicators = ['direct', 'immediate', 'straight', 'explicit']
+        indirect_indicators = ['indirect', 'secondary', 'consequent', 'mediated', 'cascading', 'knock-on', 'ripple', 'downstream']
+        
+        for word in direct_indicators:
+            if word in text:
+                return {'type': 'direct', 'confidence': 0.8, 'indicators': [word]}
+        for word in indirect_indicators:
+            if word in text:
+                return {'type': 'indirect', 'confidence': 0.8, 'indicators': [word]}
+        
+        if any(phrase in text for phrase in ['kill', 'death', 'mortality', 'destroy']):
+            return {'type': 'direct', 'confidence': 0.6, 'indicators': ['implicit']}
+        
+        return {'type': 'ambiguous', 'confidence': 0.3, 'indicators': []}
+    
+    def _extract_mechanisms(self, text):
+        mechanisms = {
+            'habitat_loss': ['habitat loss', 'deforestation', 'destruction', 'clearance'],
+            'pollution': ['pollution', 'contamination', 'chemical', 'toxic', 'pesticide'],
+            'climate_change': ['temperature', 'warming', 'climate', 'weather', 'precipitation'],
+            'disease': ['disease', 'pathogen', 'virus', 'infection', 'parasite'],
+            'competition': ['competition', 'compete', 'displacement', 'outcompete'],
+            'predation': ['predation', 'predator', 'prey', 'hunting', 'consumption'],
+            'disturbance': ['disturbance', 'noise', 'light', 'traffic', 'human activity']
+        }
+        
+        identified_mechanisms = []
+        for mechanism, keywords in mechanisms.items():
+            if any(keyword in text for keyword in keywords):
+                identified_mechanisms.append(mechanism)
+        
+        return identified_mechanisms
+    
+    def _calculate_analysis_confidence(self, statement):
+        if not statement:
+            return 0.0
+        
+        confidence_factors = [
+            len(statement.split()) > 5,
+            any(word in statement.lower() for word in ['study', 'research', 'observed', 'measured']),
+            bool(re.search(r'\d+', statement)),
+            any(word in statement.lower() for word in ['significant', 'p <', 'correlation', 'analysis'])
+        ]
+        
+        base_confidence = 0.3
+        bonus = sum(confidence_factors) * 0.15
+        
+        return min(base_confidence + bonus, 1.0)
+
 class SpeciesAnalyzer:
     def __init__(self, triplets_data):
         self.triplets_data = triplets_data
@@ -485,6 +798,8 @@ class SpeciesAnalyzer:
         self.kg_data = self.enhanced_kg.build_enriched_graph(triplets_data, load_ecological=False)
         self.graph = self.kg_data['graph']
         self.threat_clusters = self.kg_data['threat_clusters']
+        iucn_processor = EcologicalKnowledgeProcessor()
+        self.iucn_threats = iucn_processor._initialize_iucn_classification()
         
     def analyze_species(self, species_name):
         kg_results = self.analyze_knowledge_graph(species_name)
@@ -597,6 +912,13 @@ class SpeciesAnalyzer:
     def categorize_threat_node(self, threat_node):
         threat_text = threat_node.lower()
         
+        iucn_match = re.search(r'\[iucn:\s*([\d\.]+)\]', threat_text)
+        if iucn_match:
+            code = iucn_match.group(1)
+            main_category_code = code.split('.')[0]
+            if main_category_code in self.iucn_threats:
+                return self.iucn_threats[main_category_code]['category']
+
         if 'habitat' in threat_text or 'deforestation' in threat_text or 'land use' in threat_text:
             return 'Habitat Loss & Degradation'
         elif 'climate' in threat_text or 'temperature' in threat_text or 'warming' in threat_text:
@@ -1023,45 +1345,38 @@ def analyze_species():
             'semantic_clusters_count': len(semantic_clusters)
         }
         
-        threat_impact_probabilities = {}
-        threat_categories = analysis_result.get('knowledgeGraph', {}).get('threatCategories', {})
+        impact_keywords = {
+            'Population Decline': ['population', 'decline', 'decrease', 'reduction'],
+            'Habitat Degradation': ['habitat', 'degradation', 'loss', 'fragmentation', 'destruction'],
+            'Behavioral Changes': ['behavior', 'behaviour', 'movement', 'foraging', 'avoidance', 'disturbance'],
+            'Reproductive Impact': ['reproduction', 'breeding', 'nesting', 'fecundity', 'hatching', 'offspring'],
+            'Mortality': ['mortality', 'death', 'kill', 'survival', 'die']
+        }
         
-        impact_types = ['Population Decline', 'Habitat Degradation', 'Behavioral Changes', 'Reproductive Impact', 'Mortality']
+        category_impact_counts = defaultdict(lambda: defaultdict(int))
         
-        for threat_category, count in threat_categories.items():
-            if count > 0:
-                threat_impact_probabilities[threat_category] = {}
-                
-                base_prob = min(0.9, count / 100)
-                
-                for impact in impact_types:
-                    if threat_category == 'Climate Change':
-                        if impact == 'Habitat Degradation':
-                            prob = min(0.95, base_prob + 0.3)
-                        elif impact == 'Population Decline':
-                            prob = min(0.9, base_prob + 0.2)
-                        else:
-                            prob = min(0.8, base_prob + 0.1)
-                    elif threat_category == 'Disease & Pathogens':
-                        if impact == 'Mortality':
-                            prob = min(0.95, base_prob + 0.4)
-                        elif impact == 'Population Decline':
-                            prob = min(0.9, base_prob + 0.3)
-                        else:
-                            prob = min(0.7, base_prob + 0.1)
-                    elif threat_category == 'Habitat Loss & Degradation':
-                        if impact == 'Habitat Degradation':
-                            prob = min(0.98, base_prob + 0.5)
-                        elif impact == 'Population Decline':
-                            prob = min(0.85, base_prob + 0.2)
-                        else:
-                            prob = min(0.75, base_prob + 0.1)
-                    else:
-                        prob = min(0.8, base_prob + 0.1)
-                    
-                    threat_impact_probabilities[threat_category][impact] = prob
+        species_triplets = [t for t in triplets_data if t.get('subject', '').lower() == species_name.lower()]
         
-        comprehensive_profile['threat_impact_probabilities'] = threat_impact_probabilities
+        for triplet in species_triplets:
+            threat_text = triplet.get('object', '')
+            impact_text = triplet.get('predicate', '').lower()
+            category = analyzer.categorize_threat_node(threat_text)
+            
+            category_impact_counts[category]['total'] += 1
+            
+            for impact_type, keywords in impact_keywords.items():
+                if any(keyword in impact_text for keyword in keywords):
+                    category_impact_counts[category][impact_type] += 1
+        
+        threat_impact_probabilities = defaultdict(dict)
+        for category, counts in category_impact_counts.items():
+            total_in_category = counts['total']
+            if total_in_category > 0:
+                for impact_type in impact_keywords.keys():
+                    probability = counts.get(impact_type, 0) / total_in_category
+                    threat_impact_probabilities[category][impact_type] = round(probability, 2)
+
+        comprehensive_profile['threat_impact_probabilities'] = dict(threat_impact_probabilities)
         
         threat_categories = analysis_result.get('knowledgeGraph', {}).get('threatCategories', {})
         
@@ -1238,13 +1553,15 @@ def indirect_impacts():
         if not focal_species:
             return jsonify({'success': False, 'error': 'Focal species required'}), 400
         
-        species_threats_data = {
-            'Polar Bear': ['Climate Change', 'Habitat Loss', 'Pollution'],
-            'Arctic Fox': ['Climate Change', 'Habitat Loss', 'Disease'],
-            'Adelie Penguin': ['Climate Change', 'Overfishing', 'Pollution'],
-            'Snow Leopard': ['Habitat Loss', 'Poaching', 'Climate Change'],
-            'Mountain Goat': ['Climate Change', 'Habitat Loss', 'Disease']
-        }
+        species_threats_data = {}
+        for triplet in triplets_data:
+            species = triplet.get('subject', '')
+            threat = triplet.get('object', '')
+            if species and threat:
+                if species not in species_threats_data:
+                    species_threats_data[species] = []
+                if threat not in species_threats_data[species]:
+                    species_threats_data[species].append(threat)
         
         impacts = systemic_analyzer.find_indirect_impacts(focal_species, species_threats_data)
         
@@ -1265,22 +1582,56 @@ def knowledge_graph_query():
         custom_query = data.get('custom_query', '')
         
         if query_type == 'shared_threats':
-            results = [
-                {'species': 'Polar Bear', 'threat': 'Climate Change', 'connection': 'Arctic Fox'},
-                {'species': 'Arctic Fox', 'threat': 'Climate Change', 'connection': 'Adelie Penguin'},
-                {'species': 'Snow Leopard', 'threat': 'Habitat Loss', 'connection': 'Mountain Goat'}
-            ]
+            species_threats = {}
+            for triplet in triplets_data:
+                species = triplet.get('subject', '')
+                threat = triplet.get('object', '')
+                if species and threat:
+                    if species not in species_threats:
+                        species_threats[species] = set()
+                    species_threats[species].add(threat)
+            
+            results = []
+            species_list = list(species_threats.keys())
+            for i, species1 in enumerate(species_list):
+                for species2 in species_list[i+1:]:
+                    shared = species_threats[species1] & species_threats[species2]
+                    for threat in list(shared)[:3]:
+                        results.append({
+                            'species': species1, 
+                            'threat': threat, 
+                            'connection': species2
+                        })
+            results = results[:10]
+            
         elif query_type == 'semantic_similarity':
-            results = [
-                {'threat1': 'Climate Change', 'threat2': 'Global Warming', 'similarity': 0.95},
-                {'threat1': 'Habitat Loss', 'threat2': 'Deforestation', 'similarity': 0.87},
-                {'threat1': 'Pollution', 'threat2': 'Contamination', 'similarity': 0.82}
-            ]
+            threats = list(set([t.get('object', '') for t in triplets_data if t.get('object')]))
+            results = []
+            for i, threat1 in enumerate(threats[:5]):
+                for threat2 in threats[i+1:6]:
+                    similarity = len(set(threat1.lower().split()) & set(threat2.lower().split())) / max(len(threat1.split()), len(threat2.split()))
+                    if similarity > 0.3:
+                        results.append({
+                            'threat1': threat1, 
+                            'threat2': threat2, 
+                            'similarity': round(similarity, 2)
+                        })
+            results = sorted(results, key=lambda x: x['similarity'], reverse=True)[:5]
+            
         elif query_type == 'cascade_paths':
-            results = [
-                {'path': 'Climate Change → Polar Bear → Arctic Ecosystem → Arctic Fox', 'risk': 0.8},
-                {'path': 'Habitat Loss → Snow Leopard → Mountain Ecosystem → Mountain Goat', 'risk': 0.7}
-            ]
+            graph = analyzer.enhanced_kg.graph
+            results = []
+            species_nodes = [n for n, d in graph.nodes(data=True) if d.get('node_type') == 'species']
+            for species in species_nodes[:5]:
+                threats = [n for n in graph.neighbors(species) if graph.nodes[n].get('node_type') == 'threat']
+                for threat in threats[:2]:
+                    risk_score = min(graph.degree(species) / 10, 1.0)
+                    results.append({
+                        'path': f'{threat} → {species}',
+                        'risk': round(risk_score, 2)
+                    })
+            results = sorted(results, key=lambda x: x['risk'], reverse=True)[:5]
+            
         else:
             results = [{'message': 'Custom query executed', 'query': custom_query}]
         
@@ -1296,13 +1647,15 @@ def knowledge_graph_query():
 @app.route('/api/systemic_metrics', methods=['GET'])
 def systemic_metrics():
     try:
-        species_threats_data = {
-            'Polar Bear': ['Climate Change', 'Habitat Loss', 'Pollution'],
-            'Arctic Fox': ['Climate Change', 'Habitat Loss', 'Disease'],
-            'Adelie Penguin': ['Climate Change', 'Overfishing', 'Pollution'],
-            'Snow Leopard': ['Habitat Loss', 'Poaching', 'Climate Change'],
-            'Mountain Goat': ['Climate Change', 'Habitat Loss', 'Disease']
-        }
+        species_threats_data = {}
+        for triplet in triplets_data:
+            species = triplet.get('subject', '')
+            threat = triplet.get('object', '')
+            if species and threat:
+                if species not in species_threats_data:
+                    species_threats_data[species] = []
+                if threat not in species_threats_data[species]:
+                    species_threats_data[species].append(threat)
         
         metrics = systemic_analyzer.calculate_systemic_metrics(species_threats_data)
         
@@ -1463,318 +1816,6 @@ def perform_dimensionality_reduction():
         logger.error(f"Error in dimensionality reduction: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-class EcologicalKnowledgeProcessor:
-    def __init__(self):
-        self.iucn_threats = self._initialize_iucn_classification()
-        self.iucn_stresses = self._initialize_stress_classification()
-        self.impact_patterns = self._initialize_impact_patterns()
-        
-    def _initialize_iucn_classification(self):
-        return {
-            '1': {'category': 'Residential & commercial development', 'subcategories': {
-                '1.1': 'Housing & urban areas',
-                '1.2': 'Commercial & industrial areas',
-                '1.3': 'Tourism & recreation areas'
-            }},
-            '2': {'category': 'Agriculture & aquaculture', 'subcategories': {
-                '2.1': 'Annual & perennial non-timber crops',
-                '2.2': 'Wood & pulp plantations',
-                '2.3': 'Livestock farming & ranching',
-                '2.4': 'Marine & freshwater aquaculture'
-            }},
-            '3': {'category': 'Energy production & mining', 'subcategories': {
-                '3.1': 'Oil & gas drilling',
-                '3.2': 'Mining & quarrying',
-                '3.3': 'Renewable energy'
-            }},
-            '4': {'category': 'Transportation & service corridors', 'subcategories': {
-                '4.1': 'Roads & railroads',
-                '4.2': 'Utility & service lines',
-                '4.3': 'Shipping lanes',
-                '4.4': 'Flight paths'
-            }},
-            '5': {'category': 'Biological resource use', 'subcategories': {
-                '5.1': 'Hunting & collecting terrestrial animals',
-                '5.2': 'Gathering terrestrial plants',
-                '5.3': 'Logging & wood harvesting',
-                '5.4': 'Fishing & harvesting aquatic resources'
-            }},
-            '6': {'category': 'Human intrusions & disturbance', 'subcategories': {
-                '6.1': 'Recreational activities',
-                '6.2': 'War, civil unrest & military exercises',
-                '6.3': 'Work & other activities'
-            }},
-            '7': {'category': 'Natural system modifications', 'subcategories': {
-                '7.1': 'Fire & fire suppression',
-                '7.2': 'Dams & water management/use',
-                '7.3': 'Other ecosystem modifications'
-            }},
-            '8': {'category': 'Invasive & other problematic species', 'subcategories': {
-                '8.1': 'Invasive non-native/alien species/diseases',
-                '8.2': 'Problematic native species/diseases',
-                '8.3': 'Introduced genetic material',
-                '8.4': 'Problematic species/diseases of unknown origin',
-                '8.5': 'Viral/prion-induced diseases',
-                '8.6': 'Diseases of unknown cause'
-            }},
-            '9': {'category': 'Pollution', 'subcategories': {
-                '9.1': 'Domestic & urban waste water',
-                '9.2': 'Industrial & military effluents',
-                '9.3': 'Agricultural & forestry effluents',
-                '9.4': 'Garbage & solid waste',
-                '9.5': 'Air-borne pollutants',
-                '9.6': 'Excess energy'
-            }},
-            '10': {'category': 'Geological events', 'subcategories': {
-                '10.1': 'Volcanoes',
-                '10.2': 'Earthquakes/tsunamis',
-                '10.3': 'Avalanches/landslides'
-            }},
-            '11': {'category': 'Climate change & severe weather', 'subcategories': {
-                '11.1': 'Habitat shifting & alteration',
-                '11.2': 'Droughts',
-                '11.3': 'Temperature extremes',
-                '11.4': 'Storms & flooding',
-                '11.5': 'Other impacts'
-            }},
-            '12': {'category': 'Other options', 'subcategories': {
-                '12.1': 'Other threat'
-            }}
-        }
-    
-    def _initialize_stress_classification(self):
-        return {
-            'ecosystem_conversion': 'Complete habitat loss',
-            'ecosystem_degradation': 'Habitat quality decline',
-            'indirect_ecosystem_effects': 'Secondary habitat impacts',
-            'species_mortality': 'Direct species killing',
-            'species_disturbance': 'Behavioral disruption',
-            'reduced_reproductive_success': 'Breeding impacts',
-            'reduced_recruit_survival': 'Juvenile survival',
-            'competition': 'Interspecific competition',
-            'predation': 'Predation pressure',
-            'poisoning': 'Toxic exposure',
-            'disease': 'Pathogenic impacts',
-            'genetic_effects': 'Genetic diversity loss',
-            'hybridization': 'Genetic pollution'
-        }
-    
-    def _initialize_impact_patterns(self):
-        return {
-            'magnitude_patterns': [
-                r'\b(severe|major|significant|substantial|extensive|massive|dramatic)\b',
-                r'\b(moderate|limited|minor|slight|small|reduced)\b',
-                r'\b(complete|total|entire|whole|full)\b',
-                r'\b(partial|some|certain|specific)\b'
-            ],
-            'causality_patterns': [
-                r'\b(cause[sd]?|lead[s]? to|result[s]? in|trigger[s]?|induce[s]?)\b',
-                r'\b(due to|because of|as a result of|owing to)\b',
-                r'\b(contribute[s]? to|influence[s]?|affect[s]?|impact[s]?)\b'
-            ],
-            'temporal_patterns': [
-                r'\b(immediate|instant|rapid|quick|sudden)\b',
-                r'\b(gradual|slow|progressive|chronic|long-term)\b',
-                r'\b(annual|seasonal|periodic|cyclic)\b',
-                r'\b(historic|past|recent|current|ongoing)\b'
-            ],
-            'directness_patterns': [
-                r'\b(direct[ly]?|immediate[ly]?|straight|explicit)\b',
-                r'\b(indirect[ly]?|secondary|consequent|mediated)\b',
-                r'\b(cascading|knock-on|ripple|downstream)\b'
-            ]
-        }
-
-    def classify_threat_to_iucn(self, threat_text):
-        threat_lower = threat_text.lower()
-        
-        category_keywords = {
-            '1': ['urban', 'housing', 'development', 'commercial', 'industrial', 'tourism', 'recreation'],
-            '2': ['agriculture', 'farming', 'livestock', 'aquaculture', 'plantation', 'crops'],
-            '3': ['mining', 'oil', 'gas', 'drilling', 'renewable', 'energy', 'quarrying'],
-            '4': ['road', 'railroad', 'transport', 'shipping', 'utility', 'corridor'],
-            '5': ['hunting', 'fishing', 'harvesting', 'logging', 'collecting', 'exploitation'],
-            '6': ['recreation', 'disturbance', 'human', 'war', 'military'],
-            '7': ['fire', 'dam', 'water management', 'ecosystem modification'],
-            '8': ['invasive', 'alien', 'disease', 'pathogen', 'introduced'],
-            '9': ['pollution', 'contamination', 'waste', 'chemical', 'toxic'],
-            '10': ['volcano', 'earthquake', 'landslide', 'geological'],
-            '11': ['climate', 'temperature', 'weather', 'drought', 'storm', 'flood'],
-            '12': ['other', 'unknown', 'unspecified']
-        }
-        
-        best_match = None
-        best_score = 0
-        
-        for category, keywords in category_keywords.items():
-            score = sum(1 for keyword in keywords if keyword in threat_lower)
-            if score > best_score:
-                best_score = score
-                best_match = category
-        
-        confidence = min(best_score / 3.0, 1.0)
-        
-        return {
-            'category': best_match,
-            'confidence': confidence,
-            'category_name': self.iucn_threats.get(best_match, {}).get('category', 'Unknown') if best_match else 'Unclassified'
-        }
-
-    def analyze_impact_statement(self, statement):
-        if not statement:
-            return {}
-        
-        statement_lower = statement.lower()
-        
-        magnitude = self._extract_magnitude(statement)
-        
-        causality = self._extract_causality(statement)
-        
-        temporality = self._extract_temporality(statement)
-        
-        directness = self._extract_directness(statement)
-        
-        mechanisms = self._extract_mechanisms(statement)
-        
-        confidence = self._calculate_analysis_confidence(statement)
-        
-        impact_outcomes = self._extract_impact_outcomes(statement)
-        
-        return {
-            'magnitude': magnitude,
-            'causality': causality,
-            'temporality': temporality,
-            'directness': directness,
-            'mechanisms': mechanisms,
-            'impact_outcomes': impact_outcomes,
-            'confidence': confidence,
-            'iucn_classification': self.classify_threat_to_iucn(statement),
-            'processed_statement': statement
-        }
-    
-    def _extract_impact_outcomes(self, text):
-        text_lower = text.lower()
-        outcomes = []
-        
-        outcome_patterns = {
-            'population_decline': ['population decline', 'population decrease', 'population reduction', 'decline in population'],
-            'mortality': ['mortality', 'death', 'killing', 'die', 'died', 'dies'],
-            'habitat_loss': ['habitat loss', 'habitat destruction', 'habitat degradation', 'loss of habitat'],
-            'breeding_failure': ['breeding failure', 'nesting failure', 'reproduction failure', 'failed breeding'],
-            'displacement': ['displacement', 'forced migration', 'abandonment', 'relocate'],
-            'stress': ['stress', 'physiological stress', 'behavioral stress'],
-            'reduced_fitness': ['reduced fitness', 'fitness decline', 'lower fitness'],
-            'extinction': ['extinction', 'extirpation', 'local extinction']
-        }
-        
-        for outcome_type, patterns in outcome_patterns.items():
-            for pattern in patterns:
-                if pattern in text_lower:
-                    outcomes.append({
-                        'type': outcome_type,
-                        'pattern': pattern,
-                        'confidence': 0.8
-                    })
-                    break
-        
-        return outcomes
-    
-    def _extract_magnitude(self, text):
-        high_magnitude = ['severe', 'major', 'significant', 'substantial', 'extensive', 'massive', 'dramatic', 'complete', 'total']
-        medium_magnitude = ['moderate', 'noticeable', 'considerable', 'partial']
-        low_magnitude = ['minor', 'slight', 'small', 'limited', 'minimal']
-        
-        for word in high_magnitude:
-            if word in text:
-                return {'level': 'high', 'indicators': [word]}
-        for word in medium_magnitude:
-            if word in text:
-                return {'level': 'medium', 'indicators': [word]}
-        for word in low_magnitude:
-            if word in text:
-                return {'level': 'low', 'indicators': [word]}
-        
-        return {'level': 'unknown', 'indicators': []}
-    
-    def _extract_causality(self, text):
-        strong_causal = ['cause', 'lead to', 'result in', 'trigger', 'induce']
-        weak_causal = ['contribute to', 'influence', 'affect', 'impact']
-        
-        for phrase in strong_causal:
-            if phrase in text:
-                return {'strength': 'strong', 'indicators': [phrase]}
-        for phrase in weak_causal:
-            if phrase in text:
-                return {'strength': 'weak', 'indicators': [phrase]}
-        
-        return {'strength': 'unknown', 'indicators': []}
-    
-    def _extract_temporality(self, text):
-        immediate = ['immediate', 'instant', 'rapid', 'quick', 'sudden']
-        gradual = ['gradual', 'slow', 'progressive', 'chronic', 'long-term']
-        periodic = ['annual', 'seasonal', 'periodic', 'cyclic']
-        
-        for word in immediate:
-            if word in text:
-                return {'pattern': 'immediate', 'indicators': [word]}
-        for word in gradual:
-            if word in text:
-                return {'pattern': 'gradual', 'indicators': [word]}
-        for word in periodic:
-            if word in text:
-                return {'pattern': 'periodic', 'indicators': [word]}
-        
-        return {'pattern': 'unknown', 'indicators': []}
-    
-    def _extract_directness(self, text):
-        direct_indicators = ['direct', 'immediate', 'straight', 'explicit']
-        indirect_indicators = ['indirect', 'secondary', 'consequent', 'mediated', 'cascading', 'knock-on', 'ripple', 'downstream']
-        
-        for word in direct_indicators:
-            if word in text:
-                return {'type': 'direct', 'confidence': 0.8, 'indicators': [word]}
-        for word in indirect_indicators:
-            if word in text:
-                return {'type': 'indirect', 'confidence': 0.8, 'indicators': [word]}
-        
-        if any(phrase in text for phrase in ['kill', 'death', 'mortality', 'destroy']):
-            return {'type': 'direct', 'confidence': 0.6, 'indicators': ['implicit']}
-        
-        return {'type': 'ambiguous', 'confidence': 0.3, 'indicators': []}
-    
-    def _extract_mechanisms(self, text):
-        mechanisms = {
-            'habitat_loss': ['habitat loss', 'deforestation', 'destruction', 'clearance'],
-            'pollution': ['pollution', 'contamination', 'chemical', 'toxic', 'pesticide'],
-            'climate_change': ['temperature', 'warming', 'climate', 'weather', 'precipitation'],
-            'disease': ['disease', 'pathogen', 'virus', 'infection', 'parasite'],
-            'competition': ['competition', 'compete', 'displacement', 'outcompete'],
-            'predation': ['predation', 'predator', 'prey', 'hunting', 'consumption'],
-            'disturbance': ['disturbance', 'noise', 'light', 'traffic', 'human activity']
-        }
-        
-        identified_mechanisms = []
-        for mechanism, keywords in mechanisms.items():
-            if any(keyword in text for keyword in keywords):
-                identified_mechanisms.append(mechanism)
-        
-        return identified_mechanisms
-    
-    def _calculate_analysis_confidence(self, statement):
-        if not statement:
-            return 0.0
-        
-        confidence_factors = [
-            len(statement.split()) > 5,
-            any(word in statement.lower() for word in ['study', 'research', 'observed', 'measured']),
-            bool(re.search(r'\d+', statement)),
-            any(word in statement.lower() for word in ['significant', 'p <', 'correlation', 'analysis'])
-        ]
-        
-        base_confidence = 0.3
-        bonus = sum(confidence_factors) * 0.15
-        
-        return min(base_confidence + bonus, 1.0)
 
 @app.route('/api/species-deepdive/<species_name>')
 def get_species_deepdive_analysis(species_name):
@@ -2628,7 +2669,7 @@ def analyze_threat_transferability(threat, evidence_triplets, target_species, ta
     reasoning_factors = []
     
     threat_lower = threat.lower()
-    if any(keyword in threat_lower for keyword in ['climate change', 'habitat loss', 'pollution']):
+    if any(keyword in threat_lower for keyword in ['climate change', 'habitat loss', 'pollution', 'pesticide', 'chemical', 'contamination']):
         transferability_score += 0.3
         reasoning_factors.append("Broad environmental threat likely affects multiple species")
     

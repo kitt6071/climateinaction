@@ -1,0 +1,7 @@
+Lent_Init/runs/
+backend/data_with_embeddings.json
+trained_relevance_models_central/
+.git
+__pycache__/
+*.pyc
+.DS_Store 
