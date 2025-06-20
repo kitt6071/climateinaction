@@ -99,7 +99,12 @@ except ImportError:
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
-DATA_PATH = "/data/data_with_embeddings.json"
+DATA_SOURCES = [
+    "/data/data_with_embeddings.json",  # Railway volume
+    "backend/data_with_embeddings.json",  # Local file
+    "https://storage.googleapis.com/climateinaction/data_with_embeddings.json"  # Google Cloud Storage
+]
+DATA_PATH = "data_with_embeddings.json"
 
 triplets_data = []
 enhanced_kg = None
@@ -1300,15 +1305,52 @@ kg_results = None
 analyzer = None
 data_loaded = False
 
+def download_data_from_url(url, local_path):
+    """Download data file from URL to local path"""
+    try:
+        logger.info(f"Downloading data from {url}")
+        response = requests.get(url, stream=True, timeout=300)
+        response.raise_for_status()
+        
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        logger.info(f"Successfully downloaded data to {local_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download from {url}: {e}")
+        return False
+
 def load_data_if_needed():
     global triplets_data, enhanced_kg, kg_results, analyzer, data_loaded
     
     if data_loaded:
         return True
     
-    logger.info(f"Loading data from {DATA_PATH}...")
+    data_file_path = None
+    
+    # Check each data source
+    for source in DATA_SOURCES:
+        if source.startswith("http"):
+            logger.info(f"Attempting to download from {source}")
+            if download_data_from_url(source, DATA_PATH):
+                data_file_path = DATA_PATH
+                break
+        else:
+            # Check if local file exists
+            if os.path.exists(source):
+                data_file_path = source
+                logger.info(f"Found local data file at {data_file_path}")
+                break
+    
+    if not data_file_path:
+        logger.error("No data file found from any source")
+        return False
+    
+    logger.info(f"Loading data from {data_file_path}...")
     try:
-        with open(DATA_PATH, 'r', encoding='utf-8') as f:
+        with open(data_file_path, 'r', encoding='utf-8') as f:
             app_data = json.load(f)
         triplets_data = app_data.get("triplets", [])
         for triplet in triplets_data:
@@ -1330,10 +1372,10 @@ def load_data_if_needed():
         return True
         
     except FileNotFoundError:
-        logger.error(f"Data file not found: {DATA_PATH}")
+        logger.error(f"Data file not found: {data_file_path}")
         return False
     except json.JSONDecodeError:
-        logger.error(f"Could not decode JSON from {DATA_PATH}")
+        logger.error(f"Could not decode JSON from {data_file_path}")
         return False
     except Exception as e:
         logger.error(f"Error loading data: {e}")
