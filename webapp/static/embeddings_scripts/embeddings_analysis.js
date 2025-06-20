@@ -193,73 +193,95 @@ class ThreatEmbeddingsAnalyzer {
     }
 
     async loadEmbeddingsData() {
-        try {
-            console.log('Loading threat embeddings data...');
-            this.showLoadingIndicator('Loading threat embeddings data...');
-            
-            const response = await fetch('/api/threat_embeddings');
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data.success && data.embeddings && data.embeddings.length > 0) {
-                this.embeddings = data.embeddings.map(item => {
-                    let embedding = item.embedding;
-                    
-                    if (typeof embedding === 'string') {
-                        try {
-                            embedding = JSON.parse(embedding);
-                        } catch (e) {
-                            console.warn(`Failed to parse embedding string for item: ${item.id}`);
-                            embedding = null;
-                        }
-                    }
-                    
-                    if (!Array.isArray(embedding) || embedding.length === 0) {
-                        console.warn(`Invalid embedding for item: ${item.id}`, embedding);
-                        embedding = null;
-                    }
-                    
-                    if (embedding && embedding.some(val => isNaN(val) || !isFinite(val))) {
-                        console.warn(`Embedding contains invalid values for item: ${item.id}`);
-                        embedding = null;
-                    }
-                    
-                    return {
-                        id: item.id,
-                        text: item.text,
-                        species: item.species,
-                        impact: item.impact,
-                        category: item.category,
-                        predicate: item.predicate,
-                        doi: item.doi,
-                        embedding: embedding
-                    };
-                }).filter(item => item.embedding !== null);
+        const maxRetries = 3;
+        let lastError = null;
+        
+        this.showLoadingIndicator('Loading threat embeddings data...');
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`Loading threat embeddings data... (attempt ${attempt}/${maxRetries})`);
                 
-                console.log(`Loaded ${this.embeddings.length} valid threat embeddings.`);
+                const response = await fetch('/api/threat_embeddings', {
+                    timeout: 30000
+                });
                 
-                if (this.embeddings.length < 10) {
-                    console.warn(`Warning: Only ${this.embeddings.length} valid embeddings found.`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-            } else {
-                console.warn('No embeddings found in backend, generating synthetic data.');
-                await this.generateSyntheticEmbeddings();
+                const data = await response.json();
+                
+                if (data.success && data.embeddings && data.embeddings.length > 0) {
+                    this.embeddings = data.embeddings.map(item => {
+                        let embedding = item.embedding;
+                        
+                        if (typeof embedding === 'string') {
+                            try {
+                                embedding = JSON.parse(embedding);
+                            } catch (e) {
+                                console.warn(`Failed to parse embedding string for item: ${item.id}`);
+                                embedding = null;
+                            }
+                        }
+                        
+                        if (!Array.isArray(embedding) || embedding.length === 0) {
+                            console.warn(`Invalid embedding for item: ${item.id}`, embedding);
+                            embedding = null;
+                        }
+                        
+                        if (embedding && embedding.some(val => isNaN(val) || !isFinite(val))) {
+                            console.warn(`Embedding contains invalid values for item: ${item.id}`);
+                            embedding = null;
+                        }
+                        
+                        return {
+                            id: item.id,
+                            text: item.text,
+                            species: item.species,
+                            impact: item.impact,
+                            category: item.category,
+                            predicate: item.predicate,
+                            doi: item.doi,
+                            embedding: embedding
+                        };
+                    }).filter(item => item.embedding !== null);
+                    
+                    console.log(`Loaded ${this.embeddings.length} valid threat embeddings.`);
+                    
+                    if (this.embeddings.length < 10) {
+                        console.warn(`Warning: Only ${this.embeddings.length} valid embeddings found.`);
+                    }
+                    
+                    this.updateEmbeddingsInfo();
+                    this.hideLoadingIndicator();
+                    return;
+                    
+                } else {
+                    console.warn('No embeddings found in backend, generating synthetic data.');
+                    await this.generateSyntheticEmbeddings();
+                    this.updateEmbeddingsInfo();
+                    this.hideLoadingIndicator();
+                    return;
+                }
+                
+            } catch (error) {
+                lastError = error;
+                console.warn(`Embeddings loading attempt ${attempt} failed:`, error.message);
+                
+                if (attempt < maxRetries) {
+                    console.log(`Retrying in ${attempt * 2} seconds...`);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                }
             }
-            
-            this.updateEmbeddingsInfo();
-            this.hideLoadingIndicator();
-            
-        } catch (error) {
-            console.error('Error loading embeddings data:', error);
-            this.showError('Failed to load embeddings from backend. Using synthetic data for demonstration.');
-            await this.generateSyntheticEmbeddings();
-            this.hideLoadingIndicator();
         }
+        
+        // All retries failed
+        console.error('Error loading embeddings data after all retries:', lastError);
+        this.showError('Failed to load embeddings from backend. Using synthetic data for demonstration.');
+        await this.generateSyntheticEmbeddings();
+        this.updateEmbeddingsInfo();
+        this.hideLoadingIndicator();
     }
 
     async generateSyntheticEmbeddings() {

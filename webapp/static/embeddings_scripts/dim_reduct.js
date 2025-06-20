@@ -44,30 +44,52 @@
 
         ThreatEmbeddingsAnalyzer.prototype._fetchReducedDimensions = async function(method, embeddings, params = {}) {
             console.log(`Requesting ${method.toUpperCase()} reduction from backend...`);
-            try {
-                const response = await fetch('/api/dimensionality_reduction', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ embeddings, method, ...params })
-                });
+            
+            const maxRetries = 3;
+            let lastError = null;
+            
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`Attempt ${attempt}/${maxRetries} for ${method.toUpperCase()} reduction...`);
+                    
+                    const response = await fetch('/api/dimensionality_reduction', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ embeddings, method, ...params }),
+                        timeout: 30000 // 30 second timeout
+                    });
 
-                const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
 
-                if (!result.success) {
-                    throw new Error(result.error || `Backend ${method.toUpperCase()} call failed`);
+                    const result = await response.json();
+
+                    if (!result.success) {
+                        throw new Error(result.error || `Backend ${method.toUpperCase()} call failed`);
+                    }
+
+                    console.log(`${method.toUpperCase()} reduction successful.`);
+                    return result.reduced_embeddings.map((coords, idx) => ({
+                        x: coords[0],
+                        y: coords[1],
+                        originalIndex: idx
+                    }));
+                    
+                } catch (error) {
+                    lastError = error;
+                    console.warn(`${method.toUpperCase()} attempt ${attempt} failed:`, error.message);
+                    
+                    if (attempt < maxRetries) {
+                        console.log(`Retrying in ${attempt * 2} seconds...`);
+                        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                    }
                 }
-
-                console.log(`${method.toUpperCase()} reduction successful.`);
-                return result.reduced_embeddings.map((coords, idx) => ({
-                    x: coords[0],
-                    y: coords[1],
-                    originalIndex: idx
-                }));
-            } catch (error) {
-                console.error(`${method.toUpperCase()} reduction error:`, error);
-                this.showError(`${method.toUpperCase()} failed: ${error.message}`);
-                return null;
             }
+            
+            console.error(`${method.toUpperCase()} reduction failed after ${maxRetries} attempts:`, lastError);
+            this.showError(`${method.toUpperCase()} failed: Server may be sleeping. Please try again in a moment.`);
+            return null;
         };
 
         ThreatEmbeddingsAnalyzer.prototype.performPCA = function(embeddings) {
