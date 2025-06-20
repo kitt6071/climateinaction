@@ -2319,6 +2319,136 @@ footer {
 }
 
 .knowledge-transfer-container {
-    max-width: 1400px;
+    max-width: 1200px;
     margin: 0 auto;
+    padding: 20px;
+}
+
+.analysis-status {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 0.9em;
+}
+
+.status-loading {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.status-success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.status-error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.systemic-controls {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.systemic-controls .load-data-btn {
+    margin-right: 0;
+}
+
+.species-not-found {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.species-not-found h3 {
+    color: #856404;
+    margin-top: 0;
+}
+
+.species-not-found p {
+    color: #856404;
+    margin: 10px 0;
+}
+
+.dataset-info {
+    background-color: #e7f3ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 5px;
+    padding: 10px;
+    margin: 15px 0;
+}
+
+.dataset-info p {
+    color: #0c5460;
+    margin: 0;
+}
+
+.species-suggestions {
+    margin: 20px 0;
+}
+
+.species-suggestions h4 {
+    color: #495057;
+    margin-bottom: 10px;
+}
+
+.suggestion-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.suggestion-btn {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s;
+}
+
+.suggestion-btn:hover {
+    background-color: #0056b3;
+}
+
+.search-tips {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 20px;
+}
+
+.search-tips h4 {
+    color: #495057;
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.search-tips ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.search-tips li {
+    color: #6c757d;
+    margin-bottom: 5px;
 }

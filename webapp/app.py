@@ -1649,17 +1649,32 @@ systemic_analyzer = SystemicRiskAnalyzer()
 @app.route('/api/network_analysis', methods=['POST'])
 def network_analysis():
     try:
+        logger.info("Starting network analysis...")
+        
+        if not load_data_if_needed():
+            logger.error("Failed to load data for network analysis")
+            return jsonify({'success': False, 'error': 'Failed to load triplet data'}), 500
+        
         data = request.get_json()
         analysis_type = data.get('analysis_type', 'shared_threats')
         species_list = data.get('species_list', [])
         
+        logger.info(f"Analysis type: {analysis_type}, Species count: {len(species_list) if species_list else 'all'}")
+        
         if not triplets_data:
+            logger.error("No triplet data available")
             return jsonify({'success': False, 'error': 'No triplet data loaded'}), 500
+        
+        global systemic_analyzer
+        if 'systemic_analyzer' not in globals() or systemic_analyzer is None:
+            logger.info("🔧 Initializing SystemicRiskAnalyzer...")
+            systemic_analyzer = SystemicRiskAnalyzer()
         
         species_threats_data = {}
         
         if not species_list:
             species_list = list(set([triplet.get('subject', '') for triplet in triplets_data]))
+            logger.info(f"Using all species: {len(species_list)} species found")
         
         for triplet in triplets_data:
             species = triplet.get('subject', '')
@@ -1677,12 +1692,14 @@ def network_analysis():
                     species_threats_data[species].append(threat_name)
         
         species_threats_data = {k: v for k, v in species_threats_data.items() if v}
+        logger.info(f"✅ Processed {len(species_threats_data)} species with threats")
         
         if analysis_type == 'shared_threats':
             network = systemic_analyzer.build_ecological_network(species_threats_data)
         else:
             network = systemic_analyzer.build_ecological_network(species_threats_data)
         
+        logger.info("✅ Network analysis completed successfully")
         return jsonify({
             'success': True,
             'network': network,
@@ -1692,7 +1709,10 @@ def network_analysis():
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"❌ Network analysis failed: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'success': False, 'error': f'Network analysis failed: {str(e)}'}), 500
 
 @app.route('/api/indirect_impacts', methods=['POST'])
 def indirect_impacts():
@@ -2680,6 +2700,11 @@ def knowledge_transfer_analysis():
         if not target_species:
             return jsonify({'error': 'Target species name required'}), 400
         
+        if not load_data_if_needed():
+            return jsonify({'error': 'Failed to load triplet data'}), 500
+        
+        logger.info(f"Knowledge transfer analysis for '{target_species}' with threshold {similarity_threshold}")
+        
         target_threats = []
         target_triplets = []
         for triplet in triplets_data:
@@ -2687,6 +2712,35 @@ def knowledge_transfer_analysis():
                 target_threats.append(triplet.get('object', ''))
                 target_triplets.append(triplet)
         
+        logger.info(f"Found {len(target_triplets)} triplets for target species '{target_species}'")
+        
+        if len(target_triplets) == 0:
+            logger.info(f"No exact match for '{target_species}', trying partial matching...")
+            for triplet in triplets_data:
+                species_name = triplet.get('subject', '').lower()
+                if target_species.lower() in species_name or species_name in target_species.lower():
+                    target_threats.append(triplet.get('object', ''))
+                    target_triplets.append(triplet)
+            
+            logger.info(f"Partial matching found {len(target_triplets)} triplets for '{target_species}'")
+        
+        if len(target_triplets) == 0:
+            all_species = list(set([triplet.get('subject', '') for triplet in triplets_data if triplet.get('subject')]))
+            suggestions = []
+            
+            for species in all_species:
+                if (target_species.lower() in species.lower() or 
+                    species.lower() in target_species.lower() or
+                    any(word in species.lower() for word in target_species.lower().split())):
+                    suggestions.append(species)
+            
+            return jsonify({
+                'error': f'No data found for species "{target_species}"',
+                'suggestions': suggestions[:10],
+                'total_species_count': len(all_species),
+                'message': 'Try one of the suggested species names or use the Explorer tab to browse available species.'
+            }), 404
+
         target_threat_set = set(target_threats)
         
         similar_species = {}
@@ -2706,6 +2760,8 @@ def knowledge_transfer_analysis():
                 similar_species[species]['shared_threats'].add(threat)
                 similar_species[species]['all_threats'].add(threat)
                 similar_species[species]['triplets'].append(triplet)
+        
+        logger.info(f"Found {len(similar_species)} species with shared threats")
         
         for triplet in triplets_data:
             species = triplet.get('subject', '')
@@ -2729,6 +2785,8 @@ def knowledge_transfer_analysis():
             coverage_similarity = len(data_dict['shared_threats']) / len(target_threat_set) if target_threat_set else 0
             
             combined_similarity = (jaccard_similarity + coverage_similarity) / 2
+            
+            logger.debug(f"Species {species}: jaccard={jaccard_similarity:.3f}, coverage={coverage_similarity:.3f}, combined={combined_similarity:.3f}")
             
             if combined_similarity >= similarity_threshold:
                 transferable_threats = []
@@ -2787,6 +2845,8 @@ def knowledge_transfer_analysis():
                     'taxonomy_info': taxonomy_info
                 })
         
+        logger.info(f"Found {len(knowledge_transfer_candidates)} candidates above similarity threshold {similarity_threshold}")
+        
         knowledge_transfer_candidates.sort(key=lambda x: x['combined_similarity'], reverse=True)
         
         gap_analysis = analyze_knowledge_gaps_for_transfer(target_species, target_triplets, knowledge_transfer_candidates)
@@ -2804,11 +2864,18 @@ def knowledge_transfer_analysis():
             'analysis_parameters': {
                 'similarity_threshold': float(similarity_threshold),
                 'min_evidence_count': int(min_evidence_count)
+            },
+            'debug_info': {
+                'target_triplets_found': len(target_triplets),
+                'species_with_shared_threats': len(similar_species),
+                'candidates_above_threshold': len(knowledge_transfer_candidates)
             }
         })
         
     except Exception as e:
         logger.error(f"Error in knowledge transfer analysis: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 def analyze_threat_transferability(threat, evidence_triplets, target_species, target_triplets):

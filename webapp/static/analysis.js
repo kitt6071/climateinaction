@@ -722,6 +722,65 @@
         }
     }
 
+    async function runSystemicAnalysis() {
+        const statusElement = document.getElementById('systemicStatus');
+        const button = document.getElementById('triggerSystemicAnalysis');
+        
+        if (statusElement) {
+            statusElement.innerHTML = '<div class="status-loading">Running systemic analysis...</div>';
+        }
+        
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Running...';
+        }
+        
+        try {
+            console.log('Starting systemic analysis...');
+            
+            const response = await fetch('/network-analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    analysis_type: 'systemic_risk',
+                    species_list: []
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                if (statusElement) {
+                    statusElement.innerHTML = '<div class="status-success">✓ Systemic analysis completed successfully!</div>';
+                }
+                console.log('Systemic analysis completed:', result);
+                
+                await performNetworkAnalysis();
+                await performCriticalNodesAnalysis();
+                await identifyVulnerabilityCorridors();
+                await performIndirectImpactsAnalysis();
+                
+            } else {
+                throw new Error(result.error || 'Systemic analysis failed');
+            }
+            
+        } catch (error) {
+            console.error('Systemic analysis error:', error);
+            if (statusElement) {
+                statusElement.innerHTML = `<div class="status-error">✗ Error: ${error.message}</div>`;
+            }
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = 'Run Systemic Analysis';
+            }
+        }
+    }
+
+    window.runSystemicAnalysis = runSystemicAnalysis;
+
     window.performNetworkAnalysis = performNetworkAnalysis;
 
     if (window.AppFunctions) {

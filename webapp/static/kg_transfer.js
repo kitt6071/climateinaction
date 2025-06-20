@@ -115,6 +115,11 @@ async function performKnowledgeTransferAnalysis() {
         });
 
         if (!response.ok) {
+            if (response.status === 404) {
+                const errorData = await response.json();
+                displaySpeciesNotFoundError(errorData);
+                return;
+            }
             const errorText = await response.text();
             throw new Error(`API request failed: ${response.status} - ${errorText}`);
         }
@@ -128,9 +133,55 @@ async function performKnowledgeTransferAnalysis() {
                 <div class="error">
                     <h3>Analysis Error</h3>
                     <p>${error.message}</p>
-                    <p><strong>Tip:</strong> Try common bird species names.</p>
+                    <p><strong>Tip:</strong> Try common species names or use the Explorer tab to browse available species.</p>
                 </div>`;
         }
+    }
+}
+
+function displaySpeciesNotFoundError(errorData) {
+    const container = document.getElementById('knowledgeTransferResults');
+    if (!container) return;
+
+    const suggestionsHtml = errorData.suggestions && errorData.suggestions.length > 0 
+        ? `<div class="species-suggestions">
+               <h4>Did you mean one of these species?</h4>
+               <div class="suggestion-list">
+                   ${errorData.suggestions.map(species => 
+                       `<button class="suggestion-btn" onclick="selectSuggestedSpecies('${species.replace(/'/g, "\\'")}')">
+                           ${species}
+                       </button>`
+                   ).join('')}
+               </div>
+           </div>`
+        : '';
+
+    container.innerHTML = `
+        <div class="species-not-found">
+            <h3>Species Not Found</h3>
+            <p>${errorData.error}</p>
+            <p>${errorData.message}</p>
+            <div class="dataset-info">
+                <p><strong>Dataset contains ${errorData.total_species_count} species.</strong></p>
+            </div>
+            ${suggestionsHtml}
+            <div class="search-tips">
+                <h4>Search Tips:</h4>
+                <ul>
+                    <li>Use scientific names (e.g., "Gallus gallus" instead of "chicken")</li>
+                    <li>Try common names without modifiers (e.g., "eagle" instead of "bald eagle")</li>
+                    <li>Check spelling and capitalization</li>
+                    <li>Browse available species in the Explorer tab</li>
+                </ul>
+            </div>
+        </div>`;
+}
+
+function selectSuggestedSpecies(speciesName) {
+    const input = document.getElementById('ktTargetSpecies');
+    if (input) {
+        input.value = speciesName;
+        performKnowledgeTransferAnalysis();
     }
 }
 
