@@ -66,10 +66,30 @@ header h1 {
     border: 1px solid #ced4da;
     border-radius: 5px;
     cursor: pointer;
-    margin-right: 20px; 
+    margin-right: 10px; 
 }
 #toggleChainModeButton:hover {
     background-color: #d3d9df;
+}
+
+.load-data-btn {
+    padding: 0.5em 1em;
+    font-size: 0.9em;
+    color: #fff;
+    background-color: #28a745;
+    border: 1px solid #28a745;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-right: 20px;
+    transition: background-color 0.15s ease;
+}
+.load-data-btn:hover {
+    background-color: #218838;
+}
+.load-data-btn:disabled {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    cursor: not-allowed;
 }
 
 /* Species Profiling Styles */
