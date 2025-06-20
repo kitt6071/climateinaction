@@ -8,67 +8,23 @@ from collections import defaultdict, Counter
 import re
 import time
 
-torch = None
-SentenceTransformer = None
-util = None
-np = None
-KMeans = None
-DBSCAN = None
-TSNE = None
-PCA = None
-silhouette_score = None
-StandardScaler = None
-TfidfVectorizer = None
-AgglomerativeClustering = None
-Birch = None
-GaussianMixture = None
+try:
+    import torch
+    from sentence_transformers import SentenceTransformer, util
+    import numpy as np
+    from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, Birch
+    from sklearn.manifold import TSNE
+    from sklearn.decomposition import PCA
+    from sklearn.metrics import silhouette_score
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.mixture import GaussianMixture
+    ml_libs_loaded = True
+    print("All ML libraries loaded successfully at startup")
+except ImportError as e:
+    print(f"Failed to import ML libraries: {e}")
+    ml_libs_loaded = False
 
-ml_libs_loaded = False
-
-def import_lazy():
-    """
-    Loads all necessary ML libraries on first use to save memory on startup.
-    Returns True if successful, False otherwise.
-    """
-    global torch, SentenceTransformer, util, np, KMeans, DBSCAN, TSNE, PCA, silhouette_score, StandardScaler, TfidfVectorizer, AgglomerativeClustering, Birch, GaussianMixture, ml_libs_loaded
-
-    if ml_libs_loaded:
-        return True
-
-    logging.info("Loading ML libraries lazily...")
-    try:
-        import torch as torch_lib
-        from sentence_transformers import SentenceTransformer as ST_lib, util as util_lib
-        import numpy as np_lib
-        from sklearn.cluster import KMeans as KMeans_lib, DBSCAN as DBSCAN_lib, AgglomerativeClustering as AC_lib, Birch as Birch_lib
-        from sklearn.manifold import TSNE as TSNE_lib
-        from sklearn.decomposition import PCA as PCA_lib
-        from sklearn.metrics import silhouette_score as ss_lib
-        from sklearn.preprocessing import StandardScaler as SS_lib
-        from sklearn.feature_extraction.text import TfidfVectorizer as TV_lib
-        from sklearn.mixture import GaussianMixture as GM_lib
-
-        torch = torch_lib
-        SentenceTransformer = ST_lib
-        util = util_lib
-        np = np_lib
-        KMeans = KMeans_lib
-        DBSCAN = DBSCAN_lib
-        TSNE = TSNE_lib
-        PCA = PCA_lib
-        silhouette_score = ss_lib
-        StandardScaler = SS_lib
-        TfidfVectorizer = TV_lib
-        AgglomerativeClustering = AC_lib
-        Birch = Birch_lib
-        GaussianMixture = GM_lib
-        
-        ml_libs_loaded = True
-        logging.info("ML libraries loaded successfully.")
-        return True
-    except ImportError as e:
-        logging.error(f"Failed to import ML libraries: {e}")
-        return False
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import time
@@ -123,13 +79,11 @@ class SemanticThreatAnalyzer:
         self.ml_loaded = False
     
     def _ensure_ml_loaded(self):
-        if not self.ml_loaded:
-            if import_lazy():
-                self.model = SentenceTransformer(self.model_name)
-                self.ml_loaded = True
-                return True
-            return False
-        return True
+        if not self.ml_loaded and ml_libs_loaded:
+            self.model = SentenceTransformer(self.model_name)
+            self.ml_loaded = True
+            return True
+        return self.ml_loaded
         
     def generate_embeddings(self, texts, cache_key=None):
         if not self._ensure_ml_loaded():
@@ -1355,11 +1309,13 @@ def load_data_if_needed():
             app_data = json.load(f)
         triplets_data = app_data.get("triplets", [])
         
-        if not import_lazy():
-            logger.warning("ML libraries not available, embeddings will be processed later")
+        if not ml_libs_loaded:
+            logger.warning("ML libraries not available - some features will be disabled")
+        else:
+            logger.info("Using pre-loaded ML libraries")
         
         for triplet in triplets_data:
-            if 'embedding' in triplet and triplet['embedding'] is not None and torch is not None:
+            if 'embedding' in triplet and triplet['embedding'] is not None and ml_libs_loaded:
                 triplet['embedding_tensor'] = torch.tensor(triplet['embedding'])
             else:
                 triplet['embedding_tensor'] = None
@@ -3087,10 +3043,15 @@ def load_data_chunked(file_path=DATA_PATH, chunk_size=500):
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    logger.info("Starting Climate Inaction Analysis Server...")
+    logger.info("Starting Server")
     
-    logger.info("Skipping data loading for initial deployment to save memory. Data will be loaded after file upload.")
+    if ml_libs_loaded:
+        logger.info("All ML libraries loaded - advanced features available")
+    else:
+        logger.info("ML libraries not available - some features will be disabled")
     
+    logger.info("Data will be loaded from cloud storage when accessed")
     logger.info(f"Server running at http://0.0.0.0:{port}")
+    
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     app.run(debug=debug_mode, host='0.0.0.0', port=port)
