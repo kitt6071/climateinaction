@@ -1,5 +1,6 @@
 .env 
-all_abstracts.parquetbackend/data_with_embeddings.json
+backend/data_with_embeddings.json
+webapp/backend/data_with_embeddings.json
 Lent_Init/runs/
 *.pkl
 *.bin
@@ -8,10 +9,6 @@ __pycache__/
 *.pyc
 *.log
 .DS_Store
-# Large data files
-backend/data_with_embeddings.json
-Lent_Init/runs/
-Lent_Init/__pycache__/
 
 # Python cache
 __pycache__/
