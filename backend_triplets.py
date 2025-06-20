@@ -3,7 +3,7 @@ from sentence_transformers import SentenceTransformer
 
 
 TRIPLETS_FILE_PATH = "/Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second run/deepseek_deepseek-r1-0528_10000/results/enriched_triplets.json"
-OUTPUT_SUBDIR = "backend/"
+OUTPUT_SUBDIR = "webapp/backend/"
 OUTPUT_FILENAME = "data_with_embeddings.json" 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
 MAX_K_TO_TEST_FOR_CLUSTERING = 20
