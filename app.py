@@ -1339,9 +1339,24 @@ def manual_load_data():
             "message": f"Error loading data: {str(e)}"
         }), 500
 
+@app.route('/load-data-chunked', methods=['POST'])
+def load_data_chunked_endpoint():
+    """
+    Endpoint to load data in chunks to conserve memory.
+    """
+    global data_loaded
+    if data_loaded:
+        return jsonify({"status": "Data already loaded"}), 200
+
+    if load_data_chunked():
+        data_loaded = True
+        return jsonify({"status": "Data loaded successfully in chunks"}), 200
+    else:
+        return jsonify({"status": "Failed to load data in chunks"}), 500
+
 @app.route('/api/triplets', methods=['GET'])
 def get_all_triplets():
-    if not triplets_data:
+    if not load_data_if_needed():
         return jsonify({"error": "No triplet data loaded, check server logs."}), 500
     display_triplets = [
         {k: v for k, v in t.items() if k not in ['embedding', 'embedding_tensor']}
@@ -2919,6 +2934,64 @@ def generate_research_recommendations(target_species, transfer_candidates, gap_a
         })
     
     return recommendations
+
+def load_data_chunked(file_path=DATA_PATH, chunk_size=500):
+    """
+    Loads data in chunks from a JSON file to be more memory-efficient.
+    """
+    global triplets_data, enhanced_kg, kg_results, analyzer, model, data_loaded
+    
+    app.logger.info("Starting chunked data loading...")
+    
+    if 'model' not in globals() or model is None:
+        try:
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            app.logger.info("SentenceTransformer model loaded successfully.")
+        except Exception as e:
+            app.logger.error(f"Error loading SentenceTransformer model: {e}")
+            return False
+
+    try:
+        with open(file_path, 'r') as f:
+            all_data = json.load(f)
+
+        total_items = len(all_data)
+        app.logger.info(f"Total items to process: {total_items}")
+
+        temp_triplets_data = []
+        for i in range(0, total_items, chunk_size):
+            chunk = all_data[i:i + chunk_size]
+            for triplet in chunk:
+                if 'embedding' in triplet and triplet['embedding'] is not None:
+                    try:
+                        triplet['embedding_tensor'] = torch.tensor(triplet['embedding'], dtype=torch.float32)
+                    except Exception as e:
+                        app.logger.warning(f"Skipping triplet due to embedding conversion error: {e}")
+                        triplet['embedding_tensor'] = None
+                else:
+                    triplet['embedding_tensor'] = None
+                temp_triplets_data.append(triplet)
+            app.logger.info(f"Processed chunk {i // chunk_size + 1}/{(total_items + chunk_size -1) // chunk_size}")
+
+        triplets_data = temp_triplets_data
+        
+        app.logger.info("Initializing ThreatAnalyzer...")
+        analyzer = ThreatAnalyzer(triplets_data, model)
+        data_loaded = True
+        app.logger.info("Data loading process completed successfully.")
+        return True
+        
+    except FileNotFoundError:
+        app.logger.error(f"Data file not found at {file_path}")
+        return False
+    except json.JSONDecodeError:
+        app.logger.error(f"Error decoding JSON from {file_path}")
+        return False
+    except Exception as e:
+        app.logger.error(f"An unexpected error occurred during chunked data loading: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return False
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
