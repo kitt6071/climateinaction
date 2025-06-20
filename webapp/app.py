@@ -1336,6 +1336,7 @@ def load_data_if_needed():
             logger.info(f"Attempting to download from {source}")
             if download_data_from_url(source, DATA_PATH):
                 data_file_path = DATA_PATH
+                logger.info(f"Successfully downloaded data from cloud storage")
                 break
         else:
             # Check if local file exists
@@ -1353,8 +1354,12 @@ def load_data_if_needed():
         with open(data_file_path, 'r', encoding='utf-8') as f:
             app_data = json.load(f)
         triplets_data = app_data.get("triplets", [])
+        
+        if not import_lazy():
+            logger.warning("ML libraries not available, embeddings will be processed later")
+        
         for triplet in triplets_data:
-            if 'embedding' in triplet and triplet['embedding'] is not None:
+            if 'embedding' in triplet and triplet['embedding'] is not None and torch is not None:
                 triplet['embedding_tensor'] = torch.tensor(triplet['embedding'])
             else:
                 triplet['embedding_tensor'] = None
