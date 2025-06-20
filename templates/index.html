@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Species Threat Explorer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script src="{{ url_for('static', filename='embeddings_scripts/embeddings_analysis.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/dim_reduct.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/clustering.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/semantic_analysis.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/cluster_quality_analysis.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/visualization.js') }}"></script>
+    <script src="{{ url_for('static', filename='embeddings_scripts/click.js') }}"></script>
+    
+    <script src="{{ url_for('static', filename='chart_util.js') }}"></script>
+    <script src="{{ url_for('static', filename='data_loading.js') }}"></script>
+    <script src="{{ url_for('static', filename='search.js') }}"></script>
+    <script src="{{ url_for('static', filename='analysis.js') }}"></script>
+    <script src="{{ url_for('static', filename='calc_network.js') }}"></script>
+    <script src="{{ url_for('static', filename='visualize_graph.js') }}"></script>
+    <script src="{{ url_for('static', filename='kg_query.js') }}"></script>
+    <script src="{{ url_for('static', filename='kg_transfer.js') }}"></script>
+    <script src="{{ url_for('static', filename='chain_build.js') }}"></script>
+</head>
+<body>
+    <header>
+        <h1>Species Threat Explorer</h1>
+        <nav class="tab-navigation">
+            <button class="tab-button active" data-tab="explorer">Explorer</button>
+            <button class="tab-button" data-tab="profiling">Species Profiling</button>
+            <button class="tab-button" data-tab="systemic">Systemic Risk Analysis</button>
+            <button class="tab-button" data-tab="knowledge-transfer">Knowledge Transfer</button>
+            <button class="tab-button" data-tab="embeddings">Threat Embeddings</button>
+        </nav>
+        <button id="toggleChainModeButton">Start Exploration Chain</button>
+    </header>
+    <main>
+        <div id="explorerTab" class="tab-content active">
+            <div id="mainContentArea">
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="Search by species, threat, or category...">
+                    <button id="searchButton">Search</button>
+                </div>
+
+                <section id="visualizationsSection">
+                    <h2>Data Overview</h2>
+                    <div class="charts-container">
+                        <div class="chart-wrapper">
+                            <h3>Top 5 Threat Categories</h3>
+                            <canvas id="topThreatsChart"></canvas>
+                        </div>
+                        <div class="chart-wrapper">
+                            <h3>Top 5 Species by Threats</h3>
+                            <canvas id="speciesThreatCountChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <div id="tripletsContainer" class="triplets-grid">
+                </div>
+            </div>
+
+            <section id="chainBuilderSection" style="display: none;">
+                <h2>Exploration Chain</h2>
+                <div id="chainDisplayArea">
+                </div>
+                <div id="chainNextStepOptionsArea">
+                    <p>Select a species to start a chain, or click an item for options.</p>
+                </div>
+            </section>
+        </div>
+
+        <div id="profilingTab" class="tab-content">
+            <div class="profiling-container">
+                <h2>Species Threat Profile</h2>
+                
+                <div class="species-selector">
+                    <h3>Select Species for Analysis</h3>
+                    <div class="selector-controls">
+                        <input type="text" id="speciesSearchInput" placeholder="Search for species...">
+                        <select id="speciesDropdown">
+                            <option value="">Loading species...</option>
+                        </select>
+                        <button id="analyzeSpeciesButton">Analyze Species</button>
+                    </div>
+                </div>
+
+                <div id="speciesAnalysisResults" class="analysis-results" style="display: none;">
+                    <div class="analysis-header">
+                        <h3 id="selectedSpeciesName">Species Analysis</h3>
+                        <div class="analysis-summary">
+                            <div class="summary-card">
+                                <h4>Total Threats</h4>
+                                <span id="totalThreatsCount">-</span>
+                            </div>
+                            <div class="summary-card">
+                                <h4>Semantic Clusters</h4>
+                                <span id="semanticClustersCount">-</span>
+                            </div>
+                            <div class="summary-card">
+                                <h4>Impact Categories</h4>
+                                <span id="impactCategoriesCount">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analysis-sections">
+                        <section class="threat-exposure-section">
+                            <h4>Threat Exposure Analysis</h4>
+                            <div class="threat-clustering">
+                                <h5>Semantic Threat Clusters</h5>
+                                <div id="threatClustersContainer"></div>
+                            </div>
+                            <div class="threat-categories">
+                                <h5>Threat Categories</h5>
+                                <div class="chart-wrapper">
+                                    <canvas id="speciesThreatCategoriesChart"></canvas>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="impact-analysis-section">
+                            <h4>Impact Characterization</h4>
+                            <div class="impact-details">
+                                <h5>Impact Types and Severity</h5>
+                                <div id="impactAnalysisContainer"></div>
+                            </div>
+                            <div class="impact-visualization">
+                                <h5>Threat-Impact Relationships</h5>
+                                <div class="chart-wrapper">
+                                    <canvas id="threatImpactChart"></canvas>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="comprehensive-profile-section">
+                            <h4>Comprehensive Threat-Impact Profile</h4>
+                            <div id="speciesProfileContainer"></div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="systemicTab" class="tab-content">
+            <div class="systemic-container">
+                <h2>Systemic Risk Analysis</h2>
+                
+                <div class="analysis-controls">
+                    <div class="control-group">
+                        <label for="networkAnalysisType">Analysis Type:</label>
+                        <select id="networkAnalysisType">
+                            <option value="shared_threats">Shared Threat Networks</option>
+                            <option value="semantic_similarity">Semantic Threat Similarity</option>
+                            <option value="vulnerability_modules">Vulnerability Modules</option>
+                            <option value="indirect_pathways">Indirect Impact Pathways</option>
+                        </select>
+                        <button id="runNetworkAnalysis">Run Analysis</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="similarityThreshold">Semantic Similarity Threshold:</label>
+                        <input type="range" id="similarityThreshold" min="0.5" max="0.95" step="0.05" value="0.8">
+                        <span id="similarityValue">0.8</span>
+                    </div>
+                </div>
+
+                <div class="systemic-sections">
+                    <section class="network-visualization-section">
+                        <h3>Ecological Network Visualization</h3>
+                        <div class="network-container">
+                            <div class="network-controls">
+                                <div class="control-row">
+                                    <button id="centerNetwork">Center View</button>
+                                    <button id="togglePhysics">Toggle Physics</button>
+                                    <button id="exportNetwork">Export Network</button>
+                                </div>
+                                <div class="control-row">
+                                    <label for="nodeSize">Node Size:</label>
+                                    <select id="nodeSize">
+                                        <option value="degree">By Degree</option>
+                                        <option value="threats">By Threat Count</option>
+                                        <option value="uniform">Uniform</option>
+                                    </select>
+                                    <label for="edgeWeight">Edge Weight:</label>
+                                    <select id="edgeWeight">
+                                        <option value="similarity">Semantic Similarity</option>
+                                        <option value="shared_threats">Shared Threat Count</option>
+                                        <option value="uniform">Uniform</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="networkCanvas" class="network-canvas"></div>
+                            <div id="networkAnalysisResults" class="analysis-results"></div>
+                            <div id="networkLegend" class="network-legend"></div>
+                        </div>
+                    </section>
+
+                    <section class="indirect-impact-detection-section">
+                        <h3>Indirect Impact Detection</h3>
+                        <div class="impact-detection-container">
+                            <div class="detection-controls">
+                                <div class="species-selector-row">
+                                    <label for="focalSpeciesSelect">Focal Species:</label>
+                                    <select id="focalSpeciesSelect">
+                                        <option value="">Select a species...</option>
+                                    </select>
+                                    <button id="findIndirectImpacts">Find Indirect Impacts</button>
+                                </div>
+                                <div class="pathway-controls">
+                                    <label for="maxPathLength">Max Pathway Length:</label>
+                                    <input type="number" id="maxPathLength" min="2" max="5" value="3">
+                                    <label for="impactType">Impact Type:</label>
+                                    <select id="impactType">
+                                        <option value="all">All Impact Types</option>
+                                        <option value="trophic">Trophic Cascades</option>
+                                        <option value="competitive">Competitive Effects</option>
+                                        <option value="mutualistic">Mutualistic Disruption</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="indirectImpactResults" class="impact-results">
+                                <div id="pathwayVisualization" class="pathway-viz"></div>
+                                <div id="pathwayList" class="pathway-list"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="knowledge-graph-queries-section">
+                        <h3>Knowledge Graph Queries</h3>
+                        <div class="query-container">
+                            <div class="query-builder">
+                                <div class="predefined-queries">
+                                    <h4>Predefined Queries:</h4>
+                                    <div class="query-buttons">
+                                        <button class="query-btn" data-query="vulnerable_pairs">Find Vulnerable Species Pairs</button>
+                                        <button class="query-btn" data-query="threat_clusters">Analyze Threat Clusters</button>
+                                        <button class="query-btn" data-query="cascade_risks">Identify Cascade Risks</button>
+                                        <button class="query-btn" data-query="keystone_threats">Find Keystone Threats</button>
+                                        <button class="query-btn" data-query="disease_transmission">Find Disease Transmission Networks</button>
+                                    </div>
+                                </div>
+                                <div class="custom-query">
+                                    <h4>Custom Query Builder:</h4>
+                                    <div class="query-form">
+                                        <select id="querySpecies1">
+                                            <option value="">Select Species 1...</option>
+                                        </select>
+                                        <select id="queryRelationship">
+                                            <option value="shares_threat">shares threat with</option>
+                                            <option value="preys_on">preys on</option>
+                                            <option value="competes_with">competes with</option>
+                                            <option value="similar_threat">has similar threat to</option>
+                                        </select>
+                                        <select id="querySpecies2">
+                                            <option value="">Select Species 2...</option>
+                                        </select>
+                                        <button id="executeCustomQuery">Execute Query</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="queryResults" class="query-results">
+                                <div id="queryResultsTable"></div>
+                                <div id="queryVisualization"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="systemic-risk-metrics-section">
+                        <h3>Systemic Risk Metrics</h3>
+                        <div class="metrics-container">
+                            <div class="metrics-dashboard">
+                                <div class="metric-cards">
+                                    <div class="metric-card">
+                                        <h4>Network Modularity</h4>
+                                        <div class="metric-value" id="modularityValue">-</div>
+                                        <div class="metric-description">Community structure strength</div>
+                                    </div>
+                                    <div class="metric-card">
+                                        <h4>Network Nestedness</h4>
+                                        <div class="metric-value" id="nestednessValue">-</div>
+                                        <div class="metric-description">Specialist-generalist pattern</div>
+                                    </div>
+                                    <div class="metric-card">
+                                        <h4>Ecosystem Vulnerability</h4>
+                                        <div class="metric-value" id="ecosystemVulnerability">-</div>
+                                        <div class="metric-description">Overall systemic risk score</div>
+                                    </div>
+                                    <div class="metric-card">
+                                        <h4>Critical Species Count</h4>
+                                        <div class="metric-value" id="criticalSpeciesCount">-</div>
+                                        <div class="metric-description">High-impact species nodes</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="metrics-charts">
+                                    <div class="chart-wrapper">
+                                        <h4>Vulnerability Distribution</h4>
+                                        <canvas id="vulnerabilityDistributionChart"></canvas>
+                                    </div>
+                                    <div class="chart-wrapper">
+                                        <h4>Threat Propagation Network</h4>
+                                        <canvas id="threatPropagationChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="risk-analysis">
+                                <h4>Critical Nodes Analysis</h4>
+                                <div id="criticalNodesTable" class="critical-nodes-table"></div>
+                                
+                                <h4>Vulnerability Corridors</h4>
+                                <div id="vulnerabilityCorridors" class="vulnerability-corridors"></div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <div id="embeddingsTab" class="tab-content">
+            <div class="embeddings-container">
+                <h2>Threat Embeddings Analysis</h2>
+                <p class="section-description">
+                    Explore the semantic space of threat descriptions using dimensionality reduction, clustering, and interactive visualization.
+                </p>
+                
+                <div class="embeddings-controls">
+                    <div class="control-panel">
+                        <div class="control-group">
+                            <label for="dimensionalityMethod">Dimensionality Reduction:</label>
+                            <select id="dimensionalityMethod">
+                                <option value="umap">UMAP</option>
+                                <option value="tsne">t-SNE</option>
+                                <option value="pca">PCA</option>
+                            </select>
+                            <button id="loadEmbeddings">Load Embeddings</button>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="clusteringMethod">Clustering Algorithm:</label>
+                            <select id="clusteringMethod">
+                                <option value="gmm">Gaussian Mixture Model</option>
+                                <option value="kmeans">K-Means</option>
+                                <option value="hdbscan">HDBSCAN</option>
+                            </select>
+                            <label for="numClustersSlider">Clusters:</label>
+                            <input type="range" id="numClustersSlider" min="3" max="15" value="8">
+                            <span id="numClustersValue">8</span>
+                        </div>
+                        
+                        <div class="control-group">
+                            <button id="performClustering">Perform Clustering</button>
+                            <button id="generateClusterLabels">Generate Labels</button>
+                            <button id="exportVisualization">Export Visualization</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+                    Loading...
+                </div>
+
+                <div id="errorContainer" class="error-container" style="display: none;"></div>
+
+                <div class="embeddings-sections">
+                    <section class="dataset-info-section">
+                        <h3>Dataset Information</h3>
+                        <div id="embeddingsInfo" class="info-panel">
+                            <p>Load embeddings data to see dataset statistics.</p>
+                        </div>
+                    </section>
+
+                    <section class="visualization-section">
+                        <h3>Interactive Threat Landscape</h3>
+                        <div class="visualization-container">
+                            <div id="embeddingsVisualization" class="embeddings-plot">
+                                <p class="placeholder-text">
+                                    Select a dimensionality reduction method and click "Load Embeddings" to begin visualization.
+                                </p>
+                            </div>
+                            <div class="visualization-info">
+                                <div id="threatDetails" class="threat-details-panel">
+                                    <p>Click on points in the visualization to see threat details.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="clustering-analysis-section">
+                        <h3>Semantic Cluster Analysis</h3>
+                        <div class="clustering-container">
+                            <div class="clustering-results">
+                                <div id="clusteringSummary" class="clustering-summary">
+                                    <p>Perform clustering to see analysis results.</p>
+                                </div>
+                                <div id="clusterLabels" class="cluster-labels">
+                                    <p>Generate cluster labels to see semantic interpretations.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="pattern-discovery-section">
+                        <h3>Pattern Discovery</h3>
+                        <div class="pattern-container">
+                            <div class="pattern-analysis">
+                                <h4>Identified Patterns</h4>
+                                <div id="patternResults" class="pattern-results">
+                                    <div class="pattern-item">
+                                        <h5>Cluster Outliers</h5>
+                                        <p>Points that are isolated from major clusters, representing unique or rare threat descriptions.</p>
+                                        <div id="outlierThreats" class="outlier-list"></div>
+                                    </div>
+                                    <div class="pattern-item">
+                                        <h5>Threat Gradients</h5>
+                                        <p>Continuous structures indicating gradual shifts in semantic meaning across threat types.</p>
+                                        <div id="threatGradients" class="gradient-analysis"></div>
+                                    </div>
+                                    <div class="pattern-item">
+                                        <h5>Cluster Relationships</h5>
+                                        <p>Spatial arrangement of clusters revealing higher-order relationships between threat categories.</p>
+                                        <div id="clusterRelationships" class="cluster-network"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <div id="knowledge-transferTab" class="tab-content">
+            <div class="knowledge-transfer-container">
+                <h2>Knowledge Transfer</h2>
+                
+                <div class="transfer-description">
+                    <p>Discover potential threats for understudied species by analyzing similar species with more complete threat profiles. This tool identifies knowledge gaps and suggests research priorities based on comparative threat analysis.</p>
+                </div>
+                
+                <div class="transfer-controls">
+                    <div class="control-section">
+                        <h3>Target Species Analysis</h3>
+                        <div class="input-group">
+                            <label for="ktTargetSpecies">Target Species:</label>
+                            <input type="text" id="ktTargetSpecies" placeholder="Enter species name (e.g., Chicken, Domestic pig)">
+                        </div>
+                        
+                        <div class="parameter-controls">
+                            <div class="param-group">
+                                <label for="ktSimilarityThreshold">Similarity Threshold:</label>
+                                <input type="range" id="ktSimilarityThreshold" min="0.01" max="0.5" step="0.01" value="0.05">
+                                <span id="ktSimilarityValue">0.05</span>
+                            </div>
+                            
+                            <div class="param-group">
+                                <label for="ktMinEvidence">Minimum Evidence Count:</label>
+                                <input type="number" id="ktMinEvidence" min="1" max="10" value="1">
+                            </div>
+                        </div>
+                        
+                        <button id="analyzeKnowledgeTransferBtn" class="analyze-button">
+                            Analyze Knowledge Transfer Opportunities
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="knowledgeTransferResults" class="transfer-results">
+                    <div class="placeholder-message">
+                        <h3>Ready to Analyze</h3>
+                        <p>Enter a target species name above to discover potential threats based on similar species with more complete threat profiles.</p>
+                        
+                        <div class="example-analyses">
+                            <h4>Example Analyses:</h4>
+                            <div class="example-cards">
+                                <div class="example-card" onclick="document.getElementById('ktTargetSpecies').value='Sparrowhawk'; performKnowledgeTransferAnalysis();">
+                                    <strong>Sparrowhawk</strong>
+                                    <p>Raptor with 20% similarity to Peregrine Falcon</p>
+                                </div>
+                                <div class="example-card" onclick="document.getElementById('ktTargetSpecies').value='Barn Owl'; performKnowledgeTransferAnalysis();">
+                                    <strong>Barn Owl</strong>
+                                    <p>Owl species with multiple similar candidates</p>
+                                </div>
+                                <div class="example-card" onclick="document.getElementById('ktTargetSpecies').value='Greylag Goose'; performKnowledgeTransferAnalysis();">
+                                    <strong>Greylag Goose</strong>
+                                    <p>Waterfowl with transferable threat knowledge</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="similarThreatsModal" class="modal">
+            <div class="modal-content">
+                <span class="close-button" id="closeSimilarThreatsModalBtn">&times;</span>
+                <h2>Similar Threats</h2>
+                <div id="similarThreatsContent"></div>
+            </div>
+        </div>
+        <div id="detailedInfoModal" class="modal">
+            <div class="modal-content">
+                <span class="close-button" id="closeDetailedInfoModalBtn">&times;</span>
+                <h2 id="detailedInfoTitle">Detailed Information</h2>
+                <div id="detailedInfoContent"></div>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <p>Data exploration tool for species threat analysis.</p>
+    </footer>
+</body>
+</html>

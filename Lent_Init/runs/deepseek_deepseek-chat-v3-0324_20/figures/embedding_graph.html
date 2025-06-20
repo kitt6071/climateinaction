@@ -1,0 +1,155 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script src="lib/bindings/utils.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 800px;
+                 background-color: #ffffff;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+
+             
+        </style>
+    </head>
+
+
+    <body>
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"color": "#97c2fc", "id": 0, "label": "Leymus angustus", "shape": "dot", "x": 1087.8243446350098, "y": 664.6280765533447}, {"color": "#97c2fc", "id": 1, "label": "competition with invading weeds [IUCN: 8.1 Invasive non-native/alien species/diseases]", "shape": "dot", "x": 1233.4630966186523, "y": 815.13671875}, {"color": "#97c2fc", "id": 2, "label": "competition with alfalfa [IUCN: 2.1 Annual \u0026 perennial non-timber crops]", "shape": "dot", "x": 1306.4555168151855, "y": 810.2205276489258}, {"color": "#97c2fc", "id": 3, "label": "Elytrigia intermedia", "shape": "dot", "x": 1100.701904296875, "y": 612.902307510376}, {"color": "#97c2fc", "id": 4, "label": "Psathyrostachys junceus", "shape": "dot", "x": 1120.3797340393066, "y": 569.3892955780029}, {"color": "#97c2fc", "id": 5, "label": "Pea aphid", "shape": "dot", "x": 1239.4179344177246, "y": 734.2816352844238}, {"color": "#97c2fc", "id": 6, "label": "competitive interactions [IUCN: 8.2 Problematic native species/diseases]", "shape": "dot", "x": 1262.77494430542, "y": 858.2123756408691}, {"color": "#97c2fc", "id": 7, "label": "microhabitat variation in leaf quality [IUCN: 7.1 Fire \u0026 fire suppression]", "shape": "dot", "x": 1332.3171615600586, "y": 866.9792175292969}, {"color": "#97c2fc", "id": 8, "label": "Fundulus heteroclitus", "shape": "dot", "x": 1161.068344116211, "y": 618.621301651001}, {"color": "#97c2fc", "id": 9, "label": "low temperatures [IUCN: 11.3 Temperature extremes]", "shape": "dot", "x": 1392.4696922302246, "y": 813.5726928710938}, {"color": "#97c2fc", "id": 10, "label": "Creeping Bentgrass", "shape": "dot", "x": 1138.6354446411133, "y": 755.5119037628174}, {"color": "#97c2fc", "id": 11, "label": "yield declined after one harvest [IUCN: 12.1 Other threat]", "shape": "dot", "x": 1331.8269729614258, "y": 740.0760650634766}, {"color": "#97c2fc", "id": 12, "label": "Creeping Red Fescue", "shape": "dot", "x": 1148.2147216796875, "y": 787.3007297515869}, {"color": "#97c2fc", "id": 13, "label": "Kentucky bluegrass", "shape": "dot", "x": 1161.2342834472656, "y": 691.7863368988037}, {"color": "#97c2fc", "id": 14, "label": "yield declined after two harvests [IUCN: 12.1 Other threat]", "shape": "dot", "x": 1351.8427848815918, "y": 789.6533966064453}, {"color": "#97c2fc", "id": 15, "label": "Cyclops bicuspidatus thomasi", "shape": "dot", "x": 1174.3908882141113, "y": 563.6699199676514}, {"color": "#97c2fc", "id": 16, "label": "addition of the midge fly larvae common to Gwendoline Lake (C. trivittatus and C. americanus) [IUCN: 8.1 Invasive non-native/alien species/diseases]", "shape": "dot", "x": 1193.684482574463, "y": 920.6332206726074}, {"color": "#97c2fc", "id": 17, "label": "Western honey bee", "shape": "dot", "x": 1228.172492980957, "y": 665.9310340881348}, {"color": "#97c2fc", "id": 18, "label": "exposure to a sublethal concentration of imidacloprid [IUCN: 9.3 Agricultural \u0026 forestry effluents]", "shape": "dot", "x": 1249.947738647461, "y": 915.8750534057617}, {"color": "#97c2fc", "id": 19, "label": "Nile tilapia", "shape": "dot", "x": 1038.778018951416, "y": 622.423505783081}, {"color": "#97c2fc", "id": 20, "label": "introduction of Lates niloticus [IUCN: 8.1 Invasive non-native/alien species/diseases]", "shape": "dot", "x": 1178.0735969543457, "y": 859.7724914550781}]);
+                  edges = new vis.DataSet([{"from": 0, "to": 1}, {"from": 0, "to": 2}, {"from": 3, "to": 1}, {"from": 3, "to": 2}, {"from": 4, "to": 2}, {"from": 5, "to": 6}, {"from": 5, "to": 7}, {"from": 8, "to": 9}, {"from": 10, "to": 11}, {"from": 12, "to": 11}, {"from": 13, "to": 14}, {"from": 15, "to": 16}, {"from": 17, "to": 18}, {"from": 19, "to": 20}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {
+    "configure": {
+        "enabled": false
+    },
+    "edges": {
+        "color": {
+            "inherit": true
+        },
+        "smooth": {
+            "enabled": true,
+            "type": "dynamic"
+        }
+    },
+    "interaction": {
+        "dragNodes": true,
+        "hideEdgesOnDrag": false,
+        "hideNodesOnDrag": false
+    },
+    "physics": {
+        "enabled": true,
+        "stabilization": {
+            "enabled": true,
+            "fit": true,
+            "iterations": 1000,
+            "onlyDynamicEdges": false,
+            "updateInterval": 50
+        }
+    }
+};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>
