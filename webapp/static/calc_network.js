@@ -38,13 +38,16 @@ function calculateSystemicRiskMetrics() {
 }
 
 function calculateNetworkModularity() {
-    const totalEdges = window.knowledgeGraph.edges.size;
+    const knowledgeGraph = window.AppState?.knowledgeGraph;
+    if (!knowledgeGraph || !knowledgeGraph.edges) return 0;
+    
+    const totalEdges = knowledgeGraph.edges.size;
     if (totalEdges === 0) return 0;
     
     const communities = new Map();
-    window.knowledgeGraph.edges.forEach(edge => {
+    knowledgeGraph.edges.forEach(edge => {
         if (edge.type === 'EXPERIENCES_IMPACT') {
-            const impactNode = window.knowledgeGraph.nodes.get(edge.target);
+            const impactNode = knowledgeGraph.nodes.get(edge.target);
             if (!communities.has(impactNode.name)) {
                 communities.set(impactNode.name, new Set());
             }
@@ -56,7 +59,7 @@ function calculateNetworkModularity() {
     communities.forEach(speciesSet => {
         if (speciesSet.size > 1) {
             let withinCommunityEdges = 0;
-            window.knowledgeGraph.edges.forEach(edge => {
+            knowledgeGraph.edges.forEach(edge => {
                 if (speciesSet.has(edge.source) && speciesSet.has(edge.target)) {
                     withinCommunityEdges++;
                 }
@@ -70,8 +73,11 @@ function calculateNetworkModularity() {
 }
 
 function calculateNetworkNestedness() {
+    const knowledgeGraph = window.AppState?.knowledgeGraph;
+    if (!knowledgeGraph || !knowledgeGraph.edges) return 0;
+    
     const speciesThreats = new Map();
-    window.knowledgeGraph.edges.forEach(edge => {
+    knowledgeGraph.edges.forEach(edge => {
         if (edge.type === 'EXPERIENCES_IMPACT') {
             if (!speciesThreats.has(edge.source)) {
                 speciesThreats.set(edge.source, new Set());
@@ -106,9 +112,12 @@ function calculateNetworkNestedness() {
 }
 
 function calculateEcosystemVulnerability() {
-    const totalSpecies = window.knowledgeGraph.speciesNodes.size;
-    const totalThreats = window.knowledgeGraph.threatNodes.size;
-    const totalEdges = window.knowledgeGraph.edges.size;
+    const knowledgeGraph = window.AppState?.knowledgeGraph;
+    if (!knowledgeGraph) return 0;
+    
+    const totalSpecies = knowledgeGraph.speciesNodes.size;
+    const totalThreats = knowledgeGraph.threatNodes.size;
+    const totalEdges = knowledgeGraph.edges.size;
     
     if (totalSpecies === 0) return 0;
     
@@ -117,9 +126,9 @@ function calculateEcosystemVulnerability() {
     const networkDensity = maxPossibleEdges > 0 ? totalEdges / maxPossibleEdges : 0;
     
     const speciesVulnerabilities = [];
-    window.knowledgeGraph.speciesNodes.forEach(speciesNode => {
+    knowledgeGraph.speciesNodes.forEach(speciesNode => {
         let threatCount = 0;
-        window.knowledgeGraph.edges.forEach(edge => {
+        knowledgeGraph.edges.forEach(edge => {
             if (edge.type === 'EXPERIENCES_IMPACT' && edge.source === speciesNode.id) {
                 threatCount++;
             }
@@ -146,8 +155,11 @@ function calculateEcosystemVulnerability() {
 
 
 function countCriticalSpecies() {
+    const knowledgeGraph = window.AppState?.knowledgeGraph;
+    if (!knowledgeGraph || !knowledgeGraph.edges) return 0;
+    
     const speciesConnections = new Map();
-    window.knowledgeGraph.edges.forEach(edge => {
+    knowledgeGraph.edges.forEach(edge => {
         if (edge.type === 'EXPERIENCES_IMPACT') {
             const count = speciesConnections.get(edge.source) || 0;
             speciesConnections.set(edge.source, count + 1);

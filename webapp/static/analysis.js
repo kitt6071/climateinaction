@@ -88,9 +88,9 @@
             });
         }
         
-        // Process edges from backend data
-        if (networkData.edges) {
-            networkData.edges.forEach(edge => {
+        const edgesData = networkData.edges || networkData.links || [];
+        if (edgesData.length > 0) {
+            edgesData.forEach(edge => {
                 const edgeId = edge.id || `${edge.source}_${edge.target}`;
                 const source = edge.source;
                 const target = edge.target;
