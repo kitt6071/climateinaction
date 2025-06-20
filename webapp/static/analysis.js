@@ -738,7 +738,7 @@
         try {
             console.log('Starting systemic analysis...');
             
-            const response = await fetch('/network-analysis', {
+            const response = await fetch('/api/network_analysis', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
