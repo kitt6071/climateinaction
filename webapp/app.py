@@ -99,7 +99,7 @@ except ImportError:
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
-DATA_PATH = "backend/data_with_embeddings.json"
+DATA_PATH = "/data/data_with_embeddings.json"
 
 triplets_data = []
 enhanced_kg = None
