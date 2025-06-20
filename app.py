@@ -51,10 +51,16 @@ try:
 except ImportError:
     UMAP_AVAILABLE = False
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 DATA_PATH = "/data/data_with_embeddings.json"
+
+triplets_data = []
+enhanced_kg = None
+kg_results = None
+analyzer = None
+data_loaded = False
 
 class SemanticThreatAnalyzer:
     def __init__(self, model_name='all-MiniLM-L6-v2'):
@@ -1288,8 +1294,6 @@ def load_data_if_needed():
         logger.error(f"Error loading data: {e}")
         return False
 
-app = Flask(__name__, static_folder='static', template_folder='templates')
-CORS(app)
 
 def get_triplet_by_id(triplet_id):
     for triplet in triplets_data:
@@ -1366,7 +1370,7 @@ def find_similar_threats():
             continue
         
         current_embedding = triplet['embedding_tensor']
-        similarity_score = util.cos_sim(target_embedding, current_embedding).item()
+        similarity_score = torch.cosine_similarity(target_embedding, current_embedding, dim=0).item()
         
         similarities.append({
             "id": triplet.get('id'),
