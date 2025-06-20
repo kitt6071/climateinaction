@@ -1,22 +1,74 @@
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
+import os
 import json
-import numpy as np
-import pandas as pd
+import logging
+from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 import networkx as nx
 from collections import defaultdict, Counter
-import os
-import logging
 import re
-import torch
-from sentence_transformers import SentenceTransformer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.mixture import GaussianMixture
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import StandardScaler
+import time
+
+torch = None
+SentenceTransformer = None
+util = None
+np = None
+KMeans = None
+DBSCAN = None
+TSNE = None
+PCA = None
+silhouette_score = None
+StandardScaler = None
+TfidfVectorizer = None
+AgglomerativeClustering = None
+Birch = None
+GaussianMixture = None
+
+ml_libs_loaded = False
+
+def import_lazy():
+    """
+    Loads all necessary ML libraries on first use to save memory on startup.
+    Returns True if successful, False otherwise.
+    """
+    global torch, SentenceTransformer, util, np, KMeans, DBSCAN, TSNE, PCA, silhouette_score, StandardScaler, TfidfVectorizer, AgglomerativeClustering, Birch, GaussianMixture, ml_libs_loaded
+
+    if ml_libs_loaded:
+        return True
+
+    logging.info("Loading ML libraries lazily...")
+    try:
+        import torch as torch_lib
+        from sentence_transformers import SentenceTransformer as ST_lib, util as util_lib
+        import numpy as np_lib
+        from sklearn.cluster import KMeans as KMeans_lib, DBSCAN as DBSCAN_lib, AgglomerativeClustering as AC_lib, Birch as Birch_lib
+        from sklearn.manifold import TSNE as TSNE_lib
+        from sklearn.decomposition import PCA as PCA_lib
+        from sklearn.metrics import silhouette_score as ss_lib
+        from sklearn.preprocessing import StandardScaler as SS_lib
+        from sklearn.feature_extraction.text import TfidfVectorizer as TV_lib
+        from sklearn.mixture import GaussianMixture as GM_lib
+
+        torch = torch_lib
+        SentenceTransformer = ST_lib
+        util = util_lib
+        np = np_lib
+        KMeans = KMeans_lib
+        DBSCAN = DBSCAN_lib
+        TSNE = TSNE_lib
+        PCA = PCA_lib
+        silhouette_score = ss_lib
+        StandardScaler = SS_lib
+        TfidfVectorizer = TV_lib
+        AgglomerativeClustering = AC_lib
+        Birch = Birch_lib
+        GaussianMixture = GM_lib
+        
+        ml_libs_loaded = True
+        logging.info("ML libraries loaded successfully.")
+        return True
+    except ImportError as e:
+        logging.error(f"Failed to import ML libraries: {e}")
+        return False
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import time
