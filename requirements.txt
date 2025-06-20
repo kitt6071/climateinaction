@@ -1,8 +1,6 @@
 polars
 sentence-transformers
 scikit-learn
-matplotlib
-seaborn
 networkx
 nltk
 flask
@@ -20,4 +18,3 @@ bs4
 pyarrow
 aiohttp
 umap_learn
-pyvis
