@@ -2929,4 +2929,5 @@ if __name__ == '__main__':
     logger.info("Skipping data loading for initial deployment to save memory. Data will be loaded after file upload.")
     
     logger.info(f"Server running at http://0.0.0.0:{port}")
-    app.run(debug=True, host='0.0.0.0', port=port)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)
