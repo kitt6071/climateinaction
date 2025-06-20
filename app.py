@@ -5,28 +5,21 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 from collections import defaultdict, Counter
-def import_lazy():
-    global SentenceTransformer, util, TfidfVectorizer, KMeans, DBSCAN, GaussianMixture, PCA, TSNE, silhouette_score, StandardScaler
-    try:
-        from sentence_transformers import SentenceTransformer, util
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.cluster import KMeans, DBSCAN
-        from sklearn.mixture import GaussianMixture
-        from sklearn.decomposition import PCA
-        from sklearn.manifold import TSNE
-        from sklearn.metrics import silhouette_score
-        from sklearn.preprocessing import StandardScaler
-        return True
-    except ImportError as e:
-        logger.error(f"Failed to import ML libraries: {e}")
-        return False
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import requests
-import time
+import os
 import logging
 import re
 import torch
-import os
+from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.mixture import GaussianMixture
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+import time
 
 try:
     import spacy
