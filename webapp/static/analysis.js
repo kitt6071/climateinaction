@@ -51,6 +51,70 @@
         }
     }
 
+    function createKnowledgeGraphFromBackendData(networkData) {
+        console.log('Converting backend network data to knowledge graph format...');
+        
+        const kg = {
+            nodes: new Map(),
+            edges: new Map(),
+            speciesNodes: new Map(),
+            threatNodes: new Map(),
+            impactNodes: new Map()
+        };
+        
+        if (networkData.nodes) {
+            networkData.nodes.forEach(node => {
+                const nodeId = node.id || node.name;
+                const nodeType = node.type || 'unknown';
+                
+                const kgNode = {
+                    id: nodeId,
+                    label: node.name || node.label || nodeId,
+                    type: nodeType,
+                    connections: new Set(),
+                    threatCount: node.threat_count || 0,
+                    speciesCount: node.species_count || 0
+                };
+                
+                kg.nodes.set(nodeId, kgNode);
+                
+                if (nodeType === 'species') {
+                    kg.speciesNodes.set(nodeId, kgNode);
+                } else if (nodeType === 'threat') {
+                    kg.threatNodes.set(nodeId, kgNode);
+                } else if (nodeType === 'impact') {
+                    kg.impactNodes.set(nodeId, kgNode);
+                }
+            });
+        }
+        
+        // Process edges from backend data
+        if (networkData.edges) {
+            networkData.edges.forEach(edge => {
+                const edgeId = edge.id || `${edge.source}_${edge.target}`;
+                const source = edge.source;
+                const target = edge.target;
+                
+                const kgEdge = {
+                    id: edgeId,
+                    source: source,
+                    target: target,
+                    type: edge.type || 'connection'
+                };
+                
+                kg.edges.set(edgeId, kgEdge);
+                
+                if (kg.nodes.has(source) && kg.nodes.has(target)) {
+                    kg.nodes.get(source).connections.add(target);
+                    kg.nodes.get(target).connections.add(source);
+                }
+            });
+        }
+        
+        console.log(`Created knowledge graph from backend: ${kg.nodes.size} nodes, ${kg.edges.size} edges`);
+        return kg;
+    }
+
     function createBasicKnowledgeGraph() {
         const triplets = window.AppState.allTripletsData;
         if (!triplets || triplets.length === 0) {
@@ -757,10 +821,23 @@
                 }
                 console.log('Systemic analysis completed:', result);
                 
-                await performNetworkAnalysis();
-                await performCriticalNodesAnalysis();
-                await identifyVulnerabilityCorridors();
-                await performIndirectImpactsAnalysis();
+                if (result.network && window.AppState) {
+                    console.log('Initializing knowledge graph from backend response...');
+                    window.AppState.knowledgeGraph = createKnowledgeGraphFromBackendData(result.network);
+                    console.log('Knowledge graph initialized with', window.AppState.knowledgeGraph.nodes.size, 'nodes');
+                } else {
+                    console.log('Creating basic knowledge graph from triplets...');
+                    window.AppState.knowledgeGraph = createBasicKnowledgeGraph();
+                }
+                
+                if (window.AppState.knowledgeGraph && window.AppState.knowledgeGraph.nodes.size > 0) {
+                    await performNetworkAnalysis();
+                    await performCriticalNodesAnalysis();
+                    await identifyVulnerabilityCorridors();
+                    await performIndirectImpactsAnalysis();
+                } else {
+                    throw new Error('Failed to initialize knowledge graph for analysis');
+                }
                 
             } else {
                 throw new Error(result.error || 'Systemic analysis failed');
