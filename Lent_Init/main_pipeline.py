@@ -88,7 +88,7 @@ async def run_main_pipeline_logic(args):
     for p in [results_path, figures_path, cache_path, models_path]:
         p.mkdir(parents=True, exist_ok=True)
 
-    # try to load pre-trained stuff
+    # try to load pre-trained stuff, seperate script process generates and this is copy pasted into models_path folder location manually right now
     vectorizer_path = models_path / "tfidf_vectorizer.pkl"
     legacy_classifier_path = models_path / "relevance_classifier.pkl"
     vectorizer, legacy_classifier = load_classifier_components(vectorizer_path, legacy_classifier_path)
@@ -136,7 +136,7 @@ async def run_main_pipeline_logic(args):
         # try embedding classifier first
         if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
             logger.debug(f"Using embedding classifier for '{title[:30]}...'")
-            return predict_relevance_embeddings(abstract, embed_model, embed_classifier)
+            return predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.4)
         elif legacy_classifier and vectorizer:
             logger.debug(f"Using TF-IDF for '{title[:30]}...'")
             return predict_relevance_local(abstract, vectorizer, legacy_classifier)
@@ -200,6 +200,7 @@ async def run_main_pipeline_logic(args):
             for i, is_relevant in enumerate(results):
                 if is_relevant:
                     relevant_item = batch_items[i]
+                    logger.info(f"RELEVANT #{processed_count + 1}: '{relevant_item['title']}'")
                     chunk.append(relevant_item)
                     processed_count += 1 
 
@@ -351,7 +352,6 @@ async def process_abstract_chunk(
     llm_setup, 
     refinement_cache
 ) -> Tuple[List[Tuple[str, str, str, str]], Dict[str, Dict]]:
-    """Process chunk of abstracts through summary, extraction, IUCN, and normalization"""
     logger.info(f"Processing chunk of {len(chunk)} abstracts")
     dois = [d.get('doi', 'N/A') for d in chunk]
     logger.debug(f"DOIs: {dois}")
@@ -534,12 +534,10 @@ async def process_abstract_chunk(
 
 
 async def run_batch_pipeline_logic(args):
-    """Placeholder - calls main pipeline for now"""
-    logger.info("Running batch pipeline (placeholder)")
+    logger.info("Running batch pipeline")
     return await run_main_pipeline_logic(args)
 
 def run_batch_enabled_pipeline(args):
-    """Entry point for batch pipeline"""
     logger.info("Starting batch-enabled pipeline")
     return asyncio.run(run_batch_pipeline_logic(args))
 

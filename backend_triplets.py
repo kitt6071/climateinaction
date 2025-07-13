@@ -24,14 +24,14 @@ def construct_threat_sentence(triplet):
 def main():
     print(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
     model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    print("Model loaded.")
+    print("Model loaded")
 
     print(f"Loading data from {TRIPLETS_FILE_PATH}")
     with open(TRIPLETS_FILE_PATH, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
     triplets = data.get("triplets", [])
-    print(f"Loaded {len(triplets)} triplets.")
+    print(f"Loaded {len(triplets)} triplets")
 
     processed_triplets = []
     all_threat_sentences = []
@@ -51,14 +51,14 @@ def main():
         for triplet, embedding in zip(processed_triplets, embeddings):
             triplet['embedding'] = embedding.tolist()
     else:
-        print("No threat sentences found to embed.")
+        print("No threat sentences found to embed")
 
     output_data = {"triplets": processed_triplets, "taxonomy": data.get("taxonomy", {})}
     
     print(f"Saving processed data with embeddings to {OUTPUT_SUBDIR}")
     with open(OUTPUT_SUBDIR + OUTPUT_FILENAME, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, indent=2)
-    print("Preprocessing complete. Data saved.")
+    print("Preprocessing complete, data saved")
 
 if __name__ == "__main__":
     main()

@@ -20,6 +20,7 @@ except ImportError:
 logger = logging.getLogger("pipeline")
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+#Functions to set up logging and layered run folder structure
 def setup_pipeline_logging(log_file_path: Path):
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)

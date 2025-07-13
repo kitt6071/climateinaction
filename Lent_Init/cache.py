@@ -34,7 +34,7 @@ class Cache:
                     
             except Exception as e:
                 print(f"ERROR checking {file}: {e}")
-                file.unlink()  # Delete files that can't be loaded
+                file.unlink()  # deletes files that can't be loaded
         print("Invalid entries cleared")
         
     # makes a unique hash key to store then get each abstract and generated summary
@@ -45,11 +45,10 @@ class Cache:
         if gen_summary is None:
             gen_summary = ""
             
-        # Convert to string if not already
         abstract_str = str(abstract)
         gen_summary_str = str(gen_summary)
         
-        # Create the combined string and encode it
+        # creates the combined string and encodes it
         combined = f"{gen_summary_str}:{abstract_str}"
         encoded = combined.encode('utf-8', errors='replace')
         
@@ -88,7 +87,7 @@ class Cache:
             print(f"Cache write error: {e}")
 
 class SimpleCache:
-    """Simplified cache for refinement task."""
+    #simplified cache for iucn classification
     def __init__(self, cache_dir: Path):
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)

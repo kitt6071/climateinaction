@@ -292,10 +292,6 @@ class WikispeciesClient:
 
 
 async def verify_species_with_wikispecies_concurrently(species_list, run_results_path):
-    """
-    Check species names against Wikispecies API concurrently.
-    Uses a shared lookup file plus saves run-specific log.
-    """
     client = WikispeciesClient()
     
     # persistent lookup file (shared across runs)
@@ -410,7 +406,6 @@ async def verify_species_with_wikispecies_concurrently(species_list, run_results
 
 
 def parse_wikispecies_rank_hierarchy(hierarchy_list):
-    """Parse rank hierarchy from Wikispecies into standard dict."""
     ranks = {
         "kingdom": None, "phylum": None, "class": None, "order": None,
         "family": None, "genus": None, "species": None
@@ -472,9 +467,7 @@ def parse_wikispecies_rank_hierarchy(hierarchy_list):
     return ranks
 
 
-def compare_and_log_taxonomy_discrepancies(enriched_path, wikispecies_path, output_path):
-    """Compare LLM vs Wikispecies taxonomy data and log differences."""
-    
+def compare_and_log_taxonomy_discrepancies(enriched_path, wikispecies_path, output_path):    
     try:
         with open(enriched_path, 'r', encoding='utf-8') as f:
             enriched_data = json.load(f)

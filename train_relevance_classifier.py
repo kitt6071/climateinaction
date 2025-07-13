@@ -284,24 +284,24 @@ def convert_to_summary(abstract: str, llm_setup) -> str:
         return cached
 
     system_prompt = """
-    You are a scientific knowledge summarizer. Convert the following text into a structured summary that:
-    1. Focuses on species-specific impacts and threats
-    2. Clearly states causal mechanisms and relationships
-    3. Includes quantitative data when available
-    4. Emphasizes HOW impacts occur, not just WHAT happened
-    5. Use scientific names (Latin binomial) when mentioned in the abstract
-    6. If a group of species is mentioned, look for any specific examples in the abstract
-    7. If no specific species are named, use the most specific taxonomic group mentioned
-    8. Never use vague terms like "birds", "larger species", or "# bird species"
-    9. Do not include phrases like "spp" or number of species
-    10. Each species or taxonomic group should not be a phrase
-    Summarize this scientific abstract focusing on specific species and their threats. 
-    Format the summary with clear sections:
-    - Species Affected
-    - Threat Mechanisms
-    - Quantitative Findings
-    - Causal Relationships
-    """
+                    You are a scientific knowledge summarizer. Convert the following text into a structured summary that:
+                    1. Focuses on species-specific impacts and threats
+                    2. Clearly states causal mechanisms and relationships
+                    3. Includes quantitative data when available
+                    4. Emphasizes HOW impacts occur, not just WHAT happened
+                    5. Use scientific names (Latin binomial) when mentioned in the abstract
+                    6. If a group of species is mentioned, look for any specific examples in the abstract
+                    7. If no specific species are named, use the most specific taxonomic group mentioned
+                    8. Never use vague terms like "birds", "larger species", or "# bird species"
+                    9. Do not include phrases like "spp" or number of species
+                    10. Each species or taxonomic group should not be a phrase
+                    Summarize this scientific abstract focusing on specific species and their threats. 
+                    Format the summary with clear sections:
+                    - Species Affected
+                    - Threat Mechanisms
+                    - Quantitative Findings
+                    - Causal Relationships
+                    """
     try:
         full_prompt = f"Text to summarize:\n{abstract}\n\nStructured Summary:"
         summary = llm_generate(
@@ -335,19 +335,19 @@ def get_relevance_label_for_abstract_summary(
         return False
 
     iucn_context_for_prompt = """
-    General IUCN Threat Categories:
-    1. Residential & commercial development
-    2. Agriculture & aquaculture
-    3. Energy production & mining
-    4. Transportation & service corridors
-    5. Biological resource use (logging, fishing, hunting)
-    6. Human intrusions & disturbance
-    7. Natural system modifications (dams, fire suppression)
-    8. Invasive species, diseases
-    9. Pollution
-    10. Geological events
-    11. Climate change & severe weather
-    """
+                                General IUCN Threat Categories:
+                                1. Residential & commercial development
+                                2. Agriculture & aquaculture
+                                3. Energy production & mining
+                                4. Transportation & service corridors
+                                5. Biological resource use (logging, fishing, hunting)
+                                6. Human intrusions & disturbance
+                                7. Natural system modifications (dams, fire suppression)
+                                8. Invasive species, diseases
+                                9. Pollution
+                                10. Geological events
+                                11. Climate change & severe weather
+                                """
 
     system_prompt = (
         """You are an expert scientific analyst. You will be given a summary of a scientific abstract. 
@@ -356,17 +356,17 @@ def get_relevance_label_for_abstract_summary(
         species is being negatively impacted by a threat that would fall under one of the categories, and is therefore relevant.
 
         General IUCN Threat Categories:
-    1. Residential & commercial development
-    2. Agriculture & aquaculture
-    3. Energy production & mining
-    4. Transportation & service corridors
-    5. Biological resource use (logging, fishing, hunting)
-    6. Human intrusions & disturbance
-    7. Natural system modifications (dams, fire suppression)
-    8. Invasive species, diseases
-    9. Pollution
-    10. Geological events
-    11. Climate change & severe weather
+        1. Residential & commercial development
+        2. Agriculture & aquaculture
+        3. Energy production & mining
+        4. Transportation & service corridors
+        5. Biological resource use (logging, fishing, hunting)
+        6. Human intrusions & disturbance
+        7. Natural system modifications (dams, fire suppression)
+        8. Invasive species, diseases
+        9. Pollution
+        10. Geological events
+        11. Climate change & severe weather
 
         An abstract is RELEVANT if it:
         1. Mentions specific species or taxonomic groups (e.g., "Adelie penguins", "coral reefs")
@@ -384,13 +384,13 @@ def get_relevance_label_for_abstract_summary(
     )
     
     user_prompt = f"""Abstract Summary:
-{summary}
+                    {summary}
 
-General IUCN Threat Categories:
-{iucn_context_for_prompt}
+                    General IUCN Threat Categories:
+                    {iucn_context_for_prompt}
 
-Based on the summary, does the original abstract seem RELEVANT to species-threat information (specific species, specific negative impacts/threats)?
-"""
+                    Based on the summary, does the original abstract seem RELEVANT to species-threat information (specific species, specific negative impacts/threats)?
+                    """
     
     relevance_schema = {
         "type": "object", 

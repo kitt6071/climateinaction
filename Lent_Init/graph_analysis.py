@@ -32,7 +32,7 @@ def print_enriched_triple(subject, predicate, obj, doi, taxonomy):
     print("-" * 50)
 
 def build_global_graph(all_triplets):
-    # simple directed graph construction
+    #directed graph construction
     global_graph = nx.DiGraph()
     for triplet in all_triplets:
         subject, predicate, obj, _doi = triplet
@@ -49,7 +49,7 @@ def analyze_graph_detailed(graph, figures_dir):
     
     undirected_graph = graph.to_undirected()
     
-    # Main visualization - Figure 2 style
+    # Main visualization - Figure 2 style from paper on kg 
     plt.figure(figsize=(15, 5))
     
     # Full graph view
@@ -273,7 +273,6 @@ def enrich_graph_with_embeddings(graph, model, results_dir):
         return []
 
 def create_embedding_visualization(graph, model, figures_dir):
-    """Create embedding-based graph viz"""
     if not EMBEDDINGS_AVAILABLE or model is None:
         logger.warning("No embedding model available")
         return False
@@ -366,7 +365,6 @@ def create_embedding_visualization(graph, model, figures_dir):
         return False
 
 async def visualize_triplet_sentence_embeddings_batch_ingest(graph, embedding_model_instance, output_figures_dir, filename="triplet_sentences_tsne_batch_ingest.png", tsne_n_components=2, tsne_perplexity=30.0, tsne_n_iter=300, n_clusters_sentences=5, random_state=42):
-    """t-SNE viz of triplet sentences for batch ingestion"""
     if graph is None:
         logger.warning("No graph for t-SNE")
         return None, None

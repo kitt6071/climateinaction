@@ -104,9 +104,9 @@ IUCN_THREAT_PROMPT_SYSTEM = f"""
 
             **Instructions:**
             1. Analyze the provided Threat Description in the context of the Subject (Species) and Predicate (Impact Mechanism).
-            2. Identify the *underlying cause* of the threat.
+            2. Identify the *underlying cause* of the threat. For example, if the threat is "predation", the cause could be an invasive species (8.1), a problematic native species (8.2), or human hunting (5.1). Use the context to decide.
             3. Select the single *most specific and relevant* IUCN category code and name from the list above that best represents the *underlying cause*.
-            4. **Avoid 12.1 Other threat** unless no other category is remotely applicable. Think critically about the root cause.
+            4. **Avoid 12.1 Other threat** unless no other category is remotely applicable. Think critically about the root cause. For instance, "Predation" should not be 12.1 if the context suggests a more specific type of predator. "Small population size" is not a threat to be classified.
             5. Return ONLY a valid JSON object containing the selected code and name.
             """
 
@@ -147,16 +147,17 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
     for canonical_subject, predicate, obj, doi_val in triplets:
         subject_taxo = canon_llm_taxo.get(canonical_subject, {
             'error': f'No taxonomy for: {canonical_subject}',
-            'is_bird': True
+            'is_bird': False
         })
         
-        triplets_to_json.append({
-            'subject': canonical_subject,
-            'predicate': predicate,
-            'object': obj,
-            'doi': doi_val,
-            'taxonomy': subject_taxo
-        })
+        if subject_taxo.get('is_bird', False):
+            triplets_to_json.append({
+                'subject': canonical_subject,
+                'predicate': predicate,
+                'object': obj,
+                'doi': doi_val,
+                'taxonomy': subject_taxo
+            })
     
     # filter for birds only
     filtered_taxo_info = {
@@ -175,7 +176,7 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
     
     print("Enriched triplets saved to enriched_triplets.json")
 
-    # separate file for taxonomies
+    # separate file for taxonomies to inspect
     if filtered_taxo_info:
         with open(output_path / "llm_bird_taxonomies.json", "w", encoding='utf-8') as f:
             json.dump(filtered_taxo_info, f, indent=2)

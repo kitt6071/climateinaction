@@ -137,19 +137,21 @@ def setup_embedding_classifier(models_path: Path):
     
     return model, classifier
 
-def predict_relevance_embeddings(abstract_text: str, model, classifier) -> bool:
-    """Predict relevance using embeddings and trained classifier."""
+def predict_relevance_embeddings(abstract_text: str, model, classifier, threshold: float = 0.4) -> bool:
+    """Predict relevance using embeddings and trained classifier with optimized threshold."""
     if not model or not classifier:
         logger.warning("Embedding classifier components not available")
         return False
         
     try:
         embedding = model.encode([abstract_text])
-        pred = classifier.predict(embedding)[0]
-        conf = classifier.predict_proba(embedding)[0].max()
-    
-        logger.debug(f"Embedding classifier prediction: {pred} (confidence: {conf:.3f})")
-        return bool(pred)
+        # Get probability scores and apply optimized threshold
+        probabilities = classifier.predict_proba(embedding)[0]
+        relevance_score = probabilities[1]  # Probability of being relevant (shorebird)
+        is_relevant = relevance_score >= threshold
+        
+        logger.debug(f"Embedding classifier: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
+        return bool(is_relevant)
     except Exception as e:
         logger.error(f"Error in embedding relevance prediction: {e}")
         return False

@@ -1,0 +1,11 @@
+Test Set Accuracy: 0.7800
+
+Classification Report:
+              precision    recall  f1-score   support
+
+Non-Relevant       0.74      0.97      0.84        30
+    Relevant       0.91      0.50      0.65        20
+
+    accuracy                           0.78        50
+   macro avg       0.83      0.73      0.74        50
+weighted avg       0.81      0.78      0.76        50

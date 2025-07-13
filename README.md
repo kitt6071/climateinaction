@@ -19,7 +19,6 @@ The project is organized into several directories, each serving a specific purpo
 ### Root Directory
 
 - `Dockerfile`: Defines the Docker image for the application, ensuring a consistent and reproducible environment with all necessary dependencies.
-- `app.py`: A Flask web application that serves the interactive knowledge graph visualization and provides an API for querying the data.
 - `backend_triplets.py`: Contains the logic for the backend data processing, including data loading, embedding generation, and threat clustering.
 - `batchrun.sh`: A shell script for running the data processing pipeline in batch mode, allowing for large-scale data ingestion.
 - `docker-compose.yml`: Configures the services, networks, and volumes for the Docker application, making it easy to run the entire stack with a single command.

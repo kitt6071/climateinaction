@@ -46,15 +46,15 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    button.textContent = '✅ Data Loaded!';
+                    button.textContent = 'Data Loaded!';
                     alert(`Data loaded successfully! ${result.triplets_count} triplets loaded.`);
                     setTimeout(() => location.reload(), 1000);
                 } else {
-                    button.textContent = '❌ Load Failed';
+                    button.textContent = 'Load Failed';
                     alert(`Failed to load data: ${result.message}`);
                 }
             } catch (error) {
-                button.textContent = '❌ Load Failed';
+                button.textContent = 'Load Failed';
                 alert(`Error loading data: ${error.message}`);
             }
             

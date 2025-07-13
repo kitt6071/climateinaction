@@ -8,7 +8,7 @@ from pathlib import Path
 from thefuzz import fuzz
 import sys
 import os
-from .llm_api_utility import llm_generate
+from .llm_api_utility import llm_generate, llm_generate_with_retry
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -70,374 +70,6 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
         logger.error(f"summary generation failed: {e}")
         return ""
 
-
-# ollama structured output link: https://ollama.com/blog/structured-outputs#:~:text=Ollama%20now%20supports%20structured%20outputs,Parsing%20data%20from%20documents
-async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str, str, str, str]]:
-    logger.info("Generating triplets (bypassing triplet cache)...")
-
-    try:
-        # Step 1: Get species from summary
-        logger.info("1: Extracting species from summary...")
-        
-        species_schema = {
-            "type": "array",
-            "items": {
-                "type": "object", 
-                "properties": {
-                    "name": {"type": "string"},
-                    "scientific_name": {"type": "string"},
-                    "confidence": {"type": "string"}
-                },
-                "required": ["name", "confidence"]
-            }
-        }
-        
-        species_system_prompt = """
-        Extract all specific species or taxonomic groups mentioned in the text.
-
-    Rules:
-        1. Only include species or taxonomic groups that are DIRECTLY mentioned in the text
-        2. Keep scientific names exactly as written
-        3. Each entry must be a single species or specific taxonomic group
-        4. Never combine multiple species into one entry (e.g., not "# bird species")
-        5. Remove any qualifiers like "spp." or species counts
-        6. If a scientific name is provided in the text, include it
-        7. Assign a confidence level (high, medium, low) based on how clearly the species is mentioned
-        """
-        
-        species_prompt = f"Extract all species or taxonomic groups mentioned in this text:\n\n{summary}"
-        
-        species_response = await llm_generate(
-            prompt=species_prompt,
-            system=species_system_prompt,
-            model=llm_setup["species_model"],
-            temp=0.1,
-            format=species_schema,
-            llm_setup=llm_setup
-        )
-        
-        species_list = []
-        try:
-            parsed_json = json.loads(species_response)
-            if isinstance(parsed_json, dict) and "value" in parsed_json and isinstance(parsed_json["value"], list):
-                species_data_actual = parsed_json["value"]
-            elif isinstance(parsed_json, list):
-                species_data_actual = parsed_json
-            else:
-                logger.error(f"Unexpected JSON structure for species: {type(parsed_json)}")
-                species_data_actual = []
-
-            for s_item in species_data_actual:
-                if isinstance(s_item, dict) and s_item.get('confidence', '').lower() != 'low':
-                    species_list.append(s_item['name'])
-                    
-        except json.JSONDecodeError as e_json:
-            logger.error(f"Error parsing species JSON: {e_json}")
-            json_start = species_response.find('[')
-            json_end = species_response.rfind(']') + 1
-            
-            if json_start >= 0 and json_end > json_start:
-                try:
-                    species_json = species_response[json_start:json_end]
-                    species_data = json.loads(species_json)
-                    
-                    species_list = []
-                    for s in species_data:
-                        if isinstance(s, dict) and 'name' in s and s.get('confidence', '').lower() != 'low':
-                            species_list.append(s['name'])
-                except:
-                    species_list = []
-                    for line in species_response.split('\n'):
-                        if '*' in line:
-                            species = line.split('*')[1].strip()
-                            if species and len(species) > 2:
-                                species_list.append(species)
-        
-        if not species_list:
-            logger.info("No species found in the summary.")
-            return []
-        
-        logger.info(f"Extracted {len(species_list)} species:")
-        for i, species in enumerate(species_list, 1):
-            logger.info(f"{i}. {species}")
-        
-        # Step 2: Find threats for each species
-        logger.info("2: Identifying threats for each species...")
-        
-        threats_schema = {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "species_name": {"type": "string"},
-                    "threats": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "threat_description": {"type": "string"},
-                                "confidence": {"type": "string"}
-                            },
-                            "required": ["threat_description", "confidence"]
-                        }
-                    }
-                },
-                "required": ["species_name", "threats"]
-            }
-        }
-        
-        threats_system_prompt = """
-        For each species mentioned in the text, identify the specific NEGATIVE threats, stressors, or CAUSES OF HARM described as impacting them.
-
-        **Rules:**
-        1. Focus ONLY on factors that HARM or NEGATIVELY impact the species.
-        2. Extract the *specific description of the threat or stressor* (e.g., "drowning in oil pits", "habitat loss from logging", "increasing shoreline development", "competition from invasive species").
-        3. **DO NOT extract protective factors or beneficial conditions** (e.g., do not extract "protected by vegetated shorelines").
-        4. Only include threats DIRECTLY mentioned as impacting the species in the text.
-        5. Do NOT attempt to classify the threat using IUCN categories here.
-        6. Assign a confidence level (high, medium, low) based on how clearly the text links the threat description to the species.
-
-        **Output Format:** Respond with ONLY a valid JSON array matching the required schema.
-        """
-        
-        threats_prompt = f"Identify threats for each species mentioned in this text:\n\n{summary}\n\nSpecies list: {json.dumps(species_list)}"
-        
-        threats_response = await llm_generate(
-            prompt=threats_prompt,
-            system=threats_system_prompt,
-            model=llm_setup["threat_model"],
-            temp=0.1,
-            format=threats_schema,
-            llm_setup=llm_setup
-        )
-        
-        threats_data_parsed = None
-        try:
-            threats_data_parsed = json.loads(threats_response)
-        except Exception as e:
-            logger.error(f"error parsing threats JSON with schema: {e}. raw response: '{threats_response}'")
-
-        species_threat_pairs = []
-        threats_list_to_process = []
-
-        if isinstance(threats_data_parsed, list):
-            threats_list_to_process = threats_data_parsed
-            logger.info(f"Received list of {len(threats_list_to_process)} species entries.")
-        elif isinstance(threats_data_parsed, dict):
-            logger.warning("Received single dict instead of list for threats. Wrapping in list.")
-            
-            if "species" in threats_data_parsed and isinstance(threats_data_parsed["species"], list):
-                logger.info(f"Found alternative format with 'species' key containing {len(threats_data_parsed['species'])} species.")
-                converted_list = []
-                for species_item in threats_data_parsed["species"]:
-                    if isinstance(species_item, dict):
-                        converted_species = {
-                            "species_name": species_item.get("name", ""),
-                            "threats": []
-                        }
-                        for threat_entry in species_item.get("threats", []):
-                            if isinstance(threat_entry, dict):
-                                converted_threat = {
-                                    "threat_description": threat_entry.get("description", ""),
-                                    "confidence": threat_entry.get("confidence", "low")
-                                }
-                                converted_species["threats"].append(converted_threat)
-                            elif isinstance(threat_entry, str) and threat_entry.strip():
-                                threat_text = threat_entry.strip()
-                                if threat_text.lower() != "unknown":
-                                    converted_threat = {
-                                        "threat_description": threat_text,
-                                        "confidence": "medium"
-                                    }
-                                    converted_species["threats"].append(converted_threat)
-                        
-                        if converted_species["threats"]:
-                            converted_list.append(converted_species)
-                
-                threats_list_to_process = converted_list
-                logger.info(f"Converted to {len(threats_list_to_process)} standardized species entries.")
-                
-                if not threats_list_to_process:
-                    logger.info("No valid species with threats found. Skipping this abstract.")
-                    return []
-            else:
-                threats_list_to_process = [threats_data_parsed]
-        else:
-            logger.warning(f"Got {type(threats_data_parsed)}, can't processthreats.")
-             
-        for species_threat in threats_list_to_process:
-            if not isinstance(species_threat, dict):
-                logger.warning(f"error in format: got {type(species_threat)}. skipping item: {species_threat}")
-                continue 
-                
-            species_name = species_threat.get("species_name", "")
-            threats_inner_list = species_threat.get("threats", [])
-            
-            if not isinstance(threats_inner_list, list):
-                logger.warning(f"error in format: got {type(threats_inner_list)}. skipping threats for {species_name}")
-                continue
-                
-            if not threats_inner_list:
-                logger.info(f"empty threats list for species: {species_name}. skipping.")
-                continue
-            
-            for threat_detail in threats_inner_list:
-                if isinstance(threat_detail, dict):
-                    confidence = threat_detail.get("confidence", "").lower()
-                    if confidence == "low":
-                        continue
-                        
-                    threat_desc = threat_detail.get("threat_description")
-                    if not threat_desc:
-                        continue
-                        
-                    if species_name and threat_desc:
-                        species_threat_pairs.append({
-                             "species": species_name,
-                             "threat": threat_desc, 
-                        })
-                else:
-                    logger.warning(f"Expected dict for threat, got {type(threat_detail)}: {str(threat_detail)[:50]}")
-                    
-        if not species_threat_pairs:
-            logger.info("No valid species-threat pairs were identified. Skipping this abstract.")
-            return []
-        
-        logger.info(f"Found {len(species_threat_pairs)} potential species-threat pairs:")
-        for i, pair in enumerate(species_threat_pairs, 1):
-            logger.info(f"{i}. {pair['species']} potentially affected by '{pair['threat']}'")
-        
-        # Step 3: Get impact mechanisms for each species-threat pair
-        logger.info("STAGE 3: Determining impact mechanisms...")
-        
-        impacts_schema = {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "species_name": {"type": "string"},
-                    "threat_name": {"type": "string"},
-                    "mechanisms": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "description": {"type": "string"},
-                                "confidence": {"type": "string"}
-                            },
-                            "required": ["description", "confidence"]
-                        }
-                    }
-                },
-                "required": ["species_name", "threat_name", "mechanisms"]
-            }
-        }
-        
-        impacts_system_prompt = """
-        For each species-threat pair provided, identify the specific NEGATIVE impact mechanism described in the text. Focus on HOW the threat DIRECTLY HARMS the species.
-
-        Rules:
-        1. Describe the harmful consequence CAUSED BY the threat. Do NOT describe the benefits of habitat or resources that are lost or affected.
-        2. Focus ONLY on the negative impact mechanism (e.g., 'reduces nesting success', 'causes poisoning', 'increases predation risk', 'blocks migration route').
-        3. Include specific biological, physiological, or ecological processes involved in the harm.
-        4. Include quantitative measures of the negative impact when available (e.g., "reduces breeding success by 45%").
-        5. Provide direct evidence or strong inference from the text for the mechanism.
-        6. Assign a confidence level (high, medium, low) based on how clearly the negative impact mechanism is described.
-        7. If multiple distinct negative mechanisms exist for the same species-threat pair, list them separately.
-
-        Example:
-        - Text mentions: "Shoreline development leads to loss of vegetated nesting sites crucial for Wood Ducks."
-        - Threat (from Stage 2): Shoreline development
-        - Species: Wood Ducks
-        - Correct Mechanism: "loss of crucial vegetated nesting sites" or "reduces availability of nesting habitat"
-        - Incorrect Mechanism: "benefit from vegetated nesting sites"
-        """
-        
-        pair_strings = []
-        for pair in species_threat_pairs:
-            pair_strings.append(f"{pair['species']} - {pair['threat']}")
-            
-        impacts_prompt = f"Identify how each threat affects each species in this text:\n\n{summary}\n\nPairs to analyze: {json.dumps(pair_strings)}"
-        
-        impacts_response = await llm_generate(
-            prompt=impacts_prompt,
-            system=impacts_system_prompt,
-            model=llm_setup["impact_model"],
-            temp=0.1,
-            format=impacts_schema,
-            llm_setup=llm_setup
-        )
-        
-        impacts_data_parsed_list = []
-        try:
-            parsed_json = json.loads(impacts_response)
-            if isinstance(parsed_json, dict) and "items" in parsed_json and isinstance(parsed_json["items"], list):
-                logger.info("Impacts JSON is a dict with an 'items' key containing the data list.")
-                impacts_data_parsed_list = parsed_json["items"]
-            elif isinstance(parsed_json, dict) and "value" in parsed_json and isinstance(parsed_json["value"], list):
-                logger.info("Impacts JSON is a dict with a 'value' key containing the data list.")
-                impacts_data_parsed_list = parsed_json["value"]
-            elif isinstance(parsed_json, list):
-                logger.info("Impacts JSON is a direct list of data.")
-                impacts_data_parsed_list = parsed_json
-            else:
-                logger.error(f"unexpected JSON structure: {type(parsed_json)}. raw response: {impacts_response}")
-        except json.JSONDecodeError as e_json:
-            logger.error(f"error parsing impacts JSON: {e_json}")
-        except Exception as e_general:
-            logger.error(f"error processing impacts data: {e_general}")
-
-        if not impacts_data_parsed_list and species_threat_pairs: 
-            logger.warning("Impacts data parsing failed, creating fallback structure.")
-            temp_fallback_list = []
-            for pair in species_threat_pairs:
-                temp_fallback_list.append({
-                    "species_name": pair["species"],
-                    "threat_name": pair["threat"],
-                    "mechanisms": [
-                        {
-                            "description": f"negatively impacts {pair['species']} population",
-                            "confidence": "medium"
-                        }
-                    ]
-                })
-            impacts_data_parsed_list = temp_fallback_list
-        
-        logger.info("final stage: assembling triplets...")
-        
-        raw_triplets = []
-        for impact_item in impacts_data_parsed_list: 
-            if not isinstance(impact_item, dict):
-                logger.warning(f"Skipping non-dict item during triplet assembly: {impact_item}")
-                continue 
-            species = impact_item.get("species_name", "")
-            threat_obj_desc_only = impact_item.get("threat_name", "") 
-            
-            # Create triplet for each mechanism
-            for mechanism in impact_item.get("mechanisms", []):
-                if isinstance(mechanism, dict) and mechanism.get("confidence", "").lower() != "low":
-                    predicate = mechanism.get("description", "")
-                    if species and predicate and threat_obj_desc_only:
-                        raw_triplets.append((species, predicate, threat_obj_desc_only, doi))
-        
-        logger.info("Extracted Raw Triplets (before refinement/consolidation):")
-        for i, (subject, predicate, obj, d) in enumerate(raw_triplets, 1):
-            logger.info(f"{i}. {subject} | {predicate} | {obj} | DOI: {d}")
-        
-        # Consolidate similar triplets
-        consolidated_triplets = consolidate_triplets(raw_triplets)
-        
-        logger.info("Consolidated Raw Triplets:")
-        for subject, predicate, obj, d in consolidated_triplets:
-            logger.info(f"• {subject} | {predicate} | {obj} (DOI: {d})")
-        logger.info(f"Number of raw triplets: {len(consolidated_triplets)}")
-        
-        return consolidated_triplets 
-        
-    except Exception as e:
-        logger.error(f"ERROR extracting triplets: {e}")
-        return []
-
 # Extract entities (species & threats) from abstract in single call
 async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Optional[Dict[str, List[str]]]:
     logger.info(f"P2.1: Extracting entities for abstract starting: {abstract_text[:50]}...")
@@ -463,7 +95,7 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
         Extract all specific species or taxonomic groups mentioned in the text.
         Only select species that are victims of threats mentioned in this abstract and strictly follow the rules below.
 
-    Rules:
+        Rules:
         1. Only include species or taxonomic groups that are DIRECTLY mentioned in the text
         2. Keep scientific names exactly as written
         3. Each entry must be a single species or specific taxonomic group
@@ -473,6 +105,7 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
         7. Assign a confidence level (high, medium, low) based on how clearly the species is mentioned
         """
     
+    # Maybe too many examples, should relook at rule number or system/user prompt to see if it can be simplified
     general_threat_extraction_rules = """
         Based on the abstract, identify all distinct phrases describing specific NEGATIVE threats, stressors, or CAUSES OF HARM.
         Read the entire abstract to identify the most impactful threat to the ENTIRETY of this species. Only select a threat if it impacts the species as a whole. 
@@ -483,9 +116,11 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
         1. Focus ONLY on factors that CAUSE HARM or NEGATIVELY impact species generally described in the abstract. The threat should be the *origin* of the negative effect.
         2. Extract the *specific description of the CAUSE of harm or stressor* (e.g., "drowning in oil pits", "habitat loss from logging", "increasing shoreline development", "competition from invasive species", "severe aspergillosis", "mercury (Hg) exposure", "higher temperatures").
         3. **DO NOT extract symptoms, effects, or consequences as threats.** For example, if a species "suffers mortality due to illegal hunting", the threat is "illegal hunting", NOT "mortality". If a species "experiences habitat loss leading to population decline", the threat is "habitat loss", NOT "population decline".
-        4. Only include threats DIRECTLY mentioned in the text as the *cause* of a negative outcome.
-        5. Do NOT attempt to classify the threat using IUCN categories here.
-        6. Do not try to link these threats to specific species *yet*. That will be a subsequent step.
+        4. **DO NOT extract beneficial factors or the absence of a threat.** For example, do not extract "lack of predation" or "successful nesting" as a threat.
+        5. **DO NOT extract intrinsic demographic factors** (e.g., "small population size", "low reproductive success", "population decline") as threats. Focus on the *external drivers* that cause these conditions. If the abstract says a species is declining *due to* deforestation, the threat is "deforestation".
+        6. Only include threats DIRECTLY mentioned in the text as the *cause* of a negative outcome.
+        7. Do NOT attempt to classify the threat using IUCN categories here.
+        8. Do not try to link these threats to specific species *yet*. That will be a subsequent step.
 
         **Examples of Incorrect vs. Correct Threat Identification based on provided triplets:**
 
@@ -501,8 +136,20 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
             *   **Incorrect Threat Identification:** "impairs avian health" (This is a consequence/effect)
             *   **Correct Threat Identification:** "mercury (Hg) exposure" (This is the cause)
 
-        *   **Context:** "Passerine show altered food distribution patterns characterized by parental preference for senior offspring under food limitation..."
+        *   **Context:** "Passerine show altered food distribution patterns characterized by parental preference for senior offspring under food limitation, potentially affecting the survival and development of junior offspring."
             *   **Correct Threat Identification:** "food limitation" (This is the cause of altered patterns)
+
+        *   **Context:** "The species has a low reproductive rate and small population, making it vulnerable to stochastic events."
+            *   **Incorrect Threat Identification:** "low reproductive rate", "small population" (These are intrinsic states)
+            *   **Correct Threat Identification:** "stochastic events" (This is the external threat to which the species is vulnerable)
+
+        *   **Context:** "Nesting success for the Seaside Sparrow was high, likely due to a lack of predation in the protected marsh."
+            *   **Incorrect Threat Identification:** "lack of predation" or "scarcity of predators" (This is a beneficial condition, the *absence* of a threat).
+            *   **Correct Action:** This phrase should not be identified as a threat.
+
+        *   **Context:** "The primary cause of nest failure was brood reduction, where the youngest chick did not survive."
+            *   **Incorrect Threat Identification:** "brood reduction" (This is the impact/symptom).
+            *   **Correct Action:** The underlying cause for the reduction should be identified. If one isn't mentioned, this is not a valid threat to extract.
 
         *   **Context:** "Northern Bobwhite experiences unreliable population density estimation due to violated assumptions..."
             *   **Note:** While "violated assumptions" leads to a problem (unreliable estimation), it's a methodological issue, not a direct environmental threat to the species' survival or well-being in the same way as predation or habitat loss. Only extract direct threats to the organism or its environment. If the text described how inaccurate estimates *led to* mismanagement causing harm, then that mismanagement could be a threat. Here, the problem is with the *estimation method itself*.
@@ -575,6 +222,7 @@ Do not include any other explanatory text or markdown around the JSON object.
         logger.error(f"P2.1: Error in extract_entities_concurrently: {e}")
         return None
 
+#Impact relationship extraction
 async def generate_relationships_concurrently(abstract_text: str, species_list: List[str], threats_list: List[str], llm_setup, doi: str) -> List[Tuple[str, str, str, str]]:
     logger.info(f"P2.2: Generating relationships for DOI: {doi}, {len(species_list)} species, {len(threats_list)} threats")
     
@@ -596,67 +244,75 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
     }
     system_prompt = (
         """You are a specialized linguistic model. Your sole task is to generate a **Predicate** phrase. 
-You will be given:
-1. An Abstract (the source text).
-2. A Subject (a specific species name from the abstract).
-3. An Object (a specific threat phrase from the abstract, which is understood to be the CAUSE of harm).
-The relationship should describe only species-wide effects from the threat. Read the entire abstract to get additional context when establishing the relationship between the species and threats. 
-Do not be vague or redundant and ensure the relation is a FULL PHRASE, and follow these rules strictly:
+            You will be given:
+            1. An Abstract (the source text).
+            2. A Subject (a specific species name from the abstract).
+            3. An Object (a specific threat phrase from the abstract, which is understood to be the CAUSE of harm).
+            The relationship should describe only species-wide effects from the threat. Read the entire abstract to get additional context when establishing the relationship between the species and threats. 
+            Do not be vague or redundant and ensure the relation is a FULL PHRASE, and follow these rules strictly:
 
-You generated Predicate must:
-A. Clearly and concisely describe HOW the Subject (species) is specifically affected by, interacts with, or what the direct consequence/symptom for the Subject IS, as a result of the provided Object (threat). This information MUST be derived ONLY from the abstract.
-B. **CRITICALLY: The Predicate MUST NOT restate or include the exact text of the provided 'Object (Threat)'.** The Predicate's role is to bridge the gap between the Subject and the Object by describing the *effect* or *mechanism* of the Object on the Subject.
-C. Be phrased so that when combined, `(Subject) (Your Generated Predicate) (Object)` forms a grammatically correct and meaningful sentence that accurately reflects the relationship described in the abstract.
-D. Focus on extracting the specific impact, mechanism of interaction, or observed effect. Avoid generic phrases like 'is affected by' or 'is impacted by' if more specific information is available.
-E. If the abstract does not provide a clear, specific mechanism or impact connecting the Subject to the *given* Object in a way that allows for a predicate distinct from the Object itself, return an empty string or a concise phrase like 'experiences'.
+            **CRITICAL PREDICATE RULES:**
+            1.  **The `object` (threat) MUST be the CAUSE, and the `predicate` (impact) MUST be the EFFECT.** These two fields must describe different concepts. The threat is the external driver of harm; the impact is what happens to the species *as a result*.
+            2.  **DO NOT create redundant triplets.** The `predicate` cannot be the same as or mean the same thing as the `object`.
+                *   **INCORRECT:** `{"subject": "BirdA", "predicate": "is declining", "object": "population decline"}`
+                *   **CORRECT:** `{"subject": "BirdA", "predicate": "is declining due to", "object": "habitat loss"}`
+            3.  **The `subject` must be a species from the `Identified Species` list.**
+            4.  **The `object` must be a threat from the `Identified Threats` list.**
+            5.  **The `predicate` must be a meaningful phrase describing the impact.** It cannot be a single, non-descriptive word like "is" or "are".
+            6.  **Only create triplets for relationships explicitly supported by the abstract.**
 
-**Examples of How to Form the Predicate (focus on NOT restating the Object):**
+            **Examples of How to Form the Predicate (focus on NOT restating the Object):**
 
-1.  **Abstract Snippet:** \"Ostrich suffer depression as a symptom of severe aspergillosis\"
-    *   **Given Subject:** Ostrich
-    *   **Given Object (Threat):** severe aspergillosis
-    *   **Your Generated Predicate:** \"suffer depression as a symptom of\"
-    *   *(Resulting Triplet formed by your system: Ostrich suffer depression as a symptom of severe aspergillosis)*
-    *   **Incorrect Predicate (restates part/all of object):** \"is made ill by severe aspergillosis\"
+            1.  **Abstract Snippet:** \"Ostrich suffer depression as a symptom of severe aspergillosis\"
+                *   **Given Subject:** Ostrich
+                *   **Given Object (Threat):** severe aspergillosis
+                *   **Your Generated Predicate:** \"suffer depression as a symptom of\"
+                *   *(Resulting Triplet formed by your system: Ostrich suffer depression as a symptom of severe aspergillosis)*
+                *   **Incorrect Predicate (restates part/all of object):** \"is made ill by severe aspergillosis\"
 
-2.  **Abstract Snippet:** \"Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when temperatures are higher\"
-    *   **Given Subject:** Little Tern
-    *   **Given Object (Threat):** higher temperatures
-    *   **Your Generated Predicate:** \"faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season due to\"
-    *   *(Resulting Triplet: Little Tern faces increased risk of overheating of eggs... due to higher temperatures)*
+            2.  **Abstract Snippet:** \"Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when temperatures are higher\"
+                *   **Given Subject:** Little Tern
+                *   **Given Object (Threat):** higher temperatures
+                *   **Your Generated Predicate:** \"faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season due to\"
+                *   *(Resulting Triplet: Little Tern faces increased risk of overheating of eggs... due to higher temperatures)*
 
-3.  **Abstract Snippet:** \"Songbird experience impaired avian health due to mercury (Hg) exposure.\"
-    *   **Given Subject:** Songbird
-    *   **Given Object (Threat):** mercury (Hg) exposure
-    *   **Your Generated Predicate:** \"experience impaired avian health due to\"
-    *   *(Resulting Triplet: Songbird experience impaired avian health due to mercury (Hg) exposure)*
+            3.  **Abstract Snippet:** \"Songbird experience impaired avian health due to mercury (Hg) exposure.\"
+                *   **Given Subject:** Songbird
+                *   **Given Object (Threat):** mercury (Hg) exposure
+                *   **Your Generated Predicate:** \"experience impaired avian health due to\"
+                *   *(Resulting Triplet: Songbird experience impaired avian health due to mercury (Hg) exposure)*
 
-4.  **Abstract Snippet:** \"Passerine show altered food distribution patterns characterized by parental preference for senior offspring under food limitation, potentially affecting the survival and development of junior offspring.\"
-    *   **Given Subject:** Passerine
-    *   **Given Object (Threat):** food limitation
-    *   **Your Generated Predicate:** \"show altered food distribution patterns characterized by parental preference for senior offspring under\"
-    *   *(Resulting Triplet: Passerine show altered food distribution patterns... under food limitation)*
+            4.  **Abstract Snippet:** \"Passerine show altered food distribution patterns characterized by parental preference for senior offspring under food limitation, potentially affecting the survival and development of junior offspring.\"
+                *   **Given Subject:** Passerine
+                *   **Given Object (Threat):** food limitation
+                *   **Your Generated Predicate:** \"show altered food distribution patterns characterized by parental preference for senior offspring under\"
+                *   *(Resulting Triplet: Passerine show altered food distribution patterns... under food limitation)*
 
-5.  **Abstract Snippet:** \"Bird suffers mortality from direct strikes with and experiences population decline due to illegal spring killing.\"
-    *   **Given Subject:** Bird
-    *   **Given Object (Threat):** illegal spring killing
-    *   **Your Generated Predicate:** \"suffers mortality from direct strikes with and experiences population decline due to\"
-    *   *(Resulting Triplet: Bird suffers mortality... due to illegal spring killing)*
+            5.  **Abstract Snippet:** \"Bird suffers mortality from direct strikes with and experiences population decline due to illegal spring killing.\"
+                *   **Given Subject:** Bird
+                *   **Given Object (Threat):** illegal spring killing
+                *   **Your Generated Predicate:** \"suffers mortality from direct strikes with and experiences population decline due to\"
+                *   *(Resulting Triplet: Bird suffers mortality... due to illegal spring killing)*
 
-Provide ONLY the predicate string as your output. Do not include 'Predicate:' or any other explanatory text."""
+            6.  **Abstract Snippet:** "Early successional bird species are declining in landscapes where disturbances are suppressed."
+                *   **Given Subject:** Early Successional Bird
+                *   **Given Object (Threat):** suppressed disturbances
+                *   **Correct Predicate:** "are experiencing decline in landscapes where"
+                *   **Incorrect Predicate:** "are"
+
+            Provide ONLY the predicate string as your output. Do not include 'Predicate:' or any other explanatory text."""
         )
     user_prompt = f"""Abstract:
-{abstract_text}
+                    {abstract_text}
 
-Identified Species:
-{json.dumps(species_list)}
+                    Identified Species:
+                    {json.dumps(species_list)}
 
-Identified Threats:
-{json.dumps(threats_list)}
+                    Identified Threats:
+                    {json.dumps(threats_list)}
 
-Extract relationship triplets based on the abstract, linking species to threats (ensure output is ONLY the JSON array):
-"""
-
+                    Extract relationship triplets based on the abstract, linking species to threats (ensure output is ONLY the JSON array):
+                    """
     raw_triplets = []
     try:
         response_str = await llm_generate(
@@ -681,7 +337,10 @@ Extract relationship triplets based on the abstract, linking species to threats 
                     predicate = rel.get("predicate")
                     obj_threat = rel.get("object")
                     if subject and predicate and obj_threat and subject in species_list and obj_threat in threats_list:
-                        raw_triplets.append((subject, predicate, obj_threat, doi))
+                        if len(predicate.split()) > 1:
+                            raw_triplets.append((subject, predicate, obj_threat, doi))
+                        else:
+                            logger.warning(f"P2.2: Dropping invalid triplet (short predicate): {rel}. DOI: {doi}")
                     else:
                         logger.warning(f"P2.2: Dropping invalid triplet: {rel}. DOI: {doi}")
                 else:
@@ -697,7 +356,10 @@ Extract relationship triplets based on the abstract, linking species to threats 
                     predicate = rel.get("predicate")
                     obj_threat = rel.get("object")
                     if subject and predicate and obj_threat and subject in species_list and obj_threat in threats_list:
-                        raw_triplets.append((subject, predicate, obj_threat, doi))
+                        if len(predicate.split()) > 1:
+                            raw_triplets.append((subject, predicate, obj_threat, doi))
+                        else:
+                            logger.warning(f"P2.2: Dropping invalid triplet from 'value' list (short predicate): {rel}. DOI: {doi}")
                     else:
                         logger.warning(f"P2.2: Dropping invalid triplet from 'value' list: {rel}. DOI: {doi}")
                 else:
@@ -712,7 +374,10 @@ Extract relationship triplets based on the abstract, linking species to threats 
     return raw_triplets
 
 
+
 # ollama structured output link: https://ollama.com/blog/structured-outputs#:~:text=Ollama%20now%20supports%20structured%20outputs,Parsing%20data%20from%20documents
+# OLD VERSION OF EXTRACTING TRIPLETS IN THREE STEPS, one prompt for species, one for threats, one for impacts
+# New version (extract_entities_concurrently) splits NER tasks into one and the impact task into another for speed and clarity.
 async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str, str, str, str]]:
     # Cache check commented out to force regeneration (as per previous request)
     # cached = llm_setup["cache"].get(summary, "triplets")
@@ -723,7 +388,7 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
 
     try:
         # Step 1: get species
-        logger.info("step 1: finding species...")
+        logger.info("Step 1: finding species...")
         
         # Define schema for species extraction
         species_schema = {
@@ -787,7 +452,6 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
             logger.error(f"Error parsing species JSON (JSONDecodeError): {e_json}. Raw response: '{species_response}'")
         except Exception as e_general: # Catch other potential errors like AttributeError if parsing was wrong
             logger.error(f"Error processing species data: {e_general}. Raw response: '{species_response}'")
-            # Fallback (already present but good to be aware of)
             json_start = species_response.find('[')
             json_end = species_response.rfind(']') + 1
             
@@ -827,7 +491,7 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
             logger.info(f"{i}. {species}")
         
         # Step 2: find threats
-        logger.info("step 2: finding threats...")
+        logger.info("Step 2: finding threats...")
         
         threats_schema = {
             "type": "array",
@@ -978,7 +642,7 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
             logger.info(f"{i}. {pair['species']} vs {pair['threat']}")
         
         # Step 3: get impact mechanisms
-        logger.info("step 3: finding impact mechanisms...")
+        logger.info("Step 3: finding impact mechanisms...")
         
         # Define schema for impact mechanisms
         impacts_schema = {
@@ -1045,15 +709,12 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
         impacts_data_parsed_list = []
         try:
             parsed_json = json.loads(impacts_response)
-            # Scenario 1: LLM returns the schema definition AND the data array under a duplicate "items" key
             if isinstance(parsed_json, dict) and "items" in parsed_json and isinstance(parsed_json["items"], list):
                 logger.info("Impacts JSON is a dict with an 'items' key containing the data list.")
                 impacts_data_parsed_list = parsed_json["items"]
-            # Scenario 2: LLM returns a dict with a "value" key containing the data list (like species sometimes does)
             elif isinstance(parsed_json, dict) and "value" in parsed_json and isinstance(parsed_json["value"], list):
                 logger.info("Impacts JSON is a dict with a 'value' key containing the data list.")
                 impacts_data_parsed_list = parsed_json["value"]
-            # Scenario 3: LLM returns the data list directly (ideal)
             elif isinstance(parsed_json, list):
                 logger.info("Impacts JSON is a direct list of data.")
                 impacts_data_parsed_list = parsed_json
@@ -1291,13 +952,8 @@ async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str]],
     return normalized_triplets, llm_taxonomy_map
 
 # verify triplets
-async def verify_triplets(
-    triplet_list: List[Tuple[str, str, str, str]], 
-    abstract: str, 
-    llm_setup,
-    verification_cutoff: float = 0.75
-) -> Tuple[List[Tuple[str, str, str, str]], Dict[str, int]]:
-    """check triplets against original text"""
+async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstract: str, llm_setup, verification_cutoff: float = 0.75) -> Tuple[List[Tuple[str, str, str, str]], Dict[str, int]]:
+    #check triplets against original text
     verified_triplets_for_abstract = []
     counts = {
         'submitted': len(triplet_list),
@@ -1320,12 +976,15 @@ async def verify_triplets(
     }
     
     system_prompt = (
-        "You are a precise scientific fact checker. "
-        "Based on the provided abstract, verify if the relationship is true and the threat is correctly identified in the triplet. "
-        "ADDITIONALLY, answer NO if the species in the relationship is not a type of bird. "
-        "Respond ONLY with a valid JSON object matching the specified schema. "
-        "The JSON object must contain two keys: 'verification' (string: \"YES\" or \"NO\") "
-        "and 'confidence' (float: 0.0 to 1.0 representing your confidence in the verification)."
+        "You are a precise scientific fact checker specialized in ecological relationships. "
+        "Your task: Verify if the given triplet (Subject-Predicate-Object) relationship is accurately supported by the abstract. "
+        "\nVerification criteria:"
+        "\n1. The relationship must be explicitly stated or strongly implied in the abstract"
+        "\n2. The subject must be a bird species (Class Aves)"
+        "\n3. The threat/impact must be correctly described"
+        "\nResponse format: Return ONLY valid JSON with exactly these keys:"
+        '\n{"verification": "YES" or "NO", "confidence": 0.0-1.0}'
+        "\nUse YES only if the relationship is clearly supported by the abstract AND the subject is a bird."
     )
     abstract_hash_part = hashlib.md5(abstract.encode('utf-8', errors='replace')).hexdigest()[:16]
     cache_key_text = f"verify_json_confidence_batch_async:{abstract_hash_part}:{verification_cutoff}:{len(triplet_list)}" 
@@ -1358,24 +1017,115 @@ async def verify_triplets(
                         
         response_str = None
         try:
-            response_str = await llm_generate(
+            # Use Llama model specifically for verification log probs
+            #Tried with deepseek, doesn't support logprobs even though it says it does on openrouter, docs say unsupported https://api-docs.deepseek.com/guides/reasoning_model
+            verification_model = "meta-llama/llama-3.3-70b-instruct"
+            logger.info(f"Using {verification_model} for verification with logprobs")
+            
+            # Use retry logic for more robust verification because sometimes it doesn't return logprobs
+            response_result = await llm_generate_with_retry(
                 prompt=prompt, 
                 system=p_system_prompt, 
-                model=p_llm_setup["model"],
+                model=verification_model,
                 temp=0.0, 
                 format=p_verification_schema, 
-                llm_setup=p_llm_setup
+                llm_setup=p_llm_setup,
+                logprobs=True,
+                top_logprobs=5,
+                max_retries=2  # Limited retries for performance
             )
+            
+            # Handle both single string and (content, logprobs) tuple returns
+            if isinstance(response_result, tuple):
+                response_str, logprobs_info = response_result
+                logger.info(f"Received tuple response with logprobs for triplet: {subject}|{predicate}|{obj}")
+            else:
+                response_str = response_result
+                logprobs_info = None
+                logger.warning(f"Received string-only response (no logprobs) for triplet: {subject}|{predicate}|{obj}")
+            
             if not response_str:
                 return (subject, predicate, obj, doi_val), "ERROR_EMPTY_RESPONSE", 0.0
 
-            result_json = json.loads(response_str)
+            clean_response = response_str.strip()
+            if clean_response.startswith("```json") and clean_response.endswith("```"):
+                clean_response = clean_response[7:-3].strip()
+            elif clean_response.startswith("```") and clean_response.endswith("```"):
+                clean_response = clean_response[3:-3].strip()
+            
+            result_json = json.loads(clean_response)
             verification_decision = result_json.get("verification")
-            confidence_score = result_json.get("confidence")
-
-            if isinstance(verification_decision, str) and isinstance(confidence_score, (float, int)):
-                return (subject, predicate, obj, doi_val), verification_decision.upper(), confidence_score
+            
+            # Try to extract log probabilities for YES/NO tokens
+            log_prob_confidence = None
+            if logprobs_info and logprobs_info.content:
+                logger.info(f"Analyzing logprobs for {len(logprobs_info.content)} tokens in triplet: {subject}|{predicate}|{obj}")
+                yes_logprob = -float('inf')
+                no_logprob = -float('inf')
+                tokens_examined = 0
+                yes_tokens_found = []
+                no_tokens_found = []
+                
+                # Search through all tokens for YES/NO
+                for i, token_info in enumerate(logprobs_info.content):
+                    if token_info.top_logprobs:
+                        tokens_examined += 1
+                        logger.debug(f"Token {i}: examining {len(token_info.top_logprobs)} top alternatives")
+                        for top_token in token_info.top_logprobs:
+                            token_lower = top_token.token.lower().strip()
+                            logger.debug(f"   Token: '{top_token.token}' (normalized: '{token_lower}') -> logprob: {top_token.logprob:.4f}")
+                            
+                            if token_lower in ['yes', '"yes"', 'true']:
+                                old_yes = yes_logprob
+                                yes_logprob = max(yes_logprob, top_token.logprob)
+                                yes_tokens_found.append((top_token.token, top_token.logprob))
+                                if top_token.logprob > old_yes:
+                                    logger.info(f"Found YES token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
+                            elif token_lower in ['no', '"no"', 'false']:
+                                old_no = no_logprob
+                                no_logprob = max(no_logprob, top_token.logprob)
+                                no_tokens_found.append((top_token.token, top_token.logprob))
+                                if top_token.logprob > old_no:
+                                    logger.info(f"Found NO token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
+                
+                logger.info(f"Logprob analysis complete: examined {tokens_examined} tokens")
+                logger.info(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")
+                logger.info(f"NO tokens found: {len(no_tokens_found)} (best: {no_logprob:.4f})")
+                
+                # Use log probability as confidence if found
+                if verification_decision.upper() == "YES" and yes_logprob > -float('inf'):
+                    log_prob_confidence = yes_logprob
+                    logger.info(f"Using YES log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
+                elif verification_decision.upper() == "NO" and no_logprob > -float('inf'):
+                    log_prob_confidence = no_logprob
+                    logger.info(f"Using NO log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
+                else:
+                    logger.warning(f"Could not find matching log probability for decision '{verification_decision}' (YES: {yes_logprob:.4f}, NO: {no_logprob:.4f})")
             else:
+                if logprobs_info is None:
+                    logger.warning(f"No logprobs_info available for triplet: {subject}|{predicate}|{obj}")
+                elif not logprobs_info.content:
+                    logger.warning(f"logprobs_info.content is empty for triplet: {subject}|{predicate}|{obj}")
+                else:
+                    logger.warning(f"Unexpected logprobs_info structure for triplet: {subject}|{predicate}|{obj}")
+            
+            # Fall back to JSON confidence if no logprob found or if any erorrs happen
+            if log_prob_confidence is None:
+                confidence_score = result_json.get("confidence", 0.0)
+                if isinstance(confidence_score, (float, int)):
+                    log_prob_confidence = confidence_score
+                    logger.warning(f"Falling back to JSON confidence: {log_prob_confidence:.4f} for triplet: {subject}|{predicate}|{obj}")
+                else:
+                    log_prob_confidence = 0.0
+                    logger.error(f"Invalid JSON confidence, using 0.0 for triplet: {subject}|{predicate}|{obj}")
+            else:
+                logger.info(f"Successfully extracted log probability confidence: {log_prob_confidence:.4f}")
+
+            if isinstance(verification_decision, str):
+                logger.info(f"Returning verification result: decision='{verification_decision.upper()}', confidence={log_prob_confidence:.4f}")
+                return (subject, predicate, obj, doi_val), verification_decision.upper(), log_prob_confidence
+            else:
+                logger.error(f"Invalid verification decision type: {type(verification_decision)} for triplet: {subject}|{predicate}|{obj}")
                 return (subject, predicate, obj, doi_val), "ERROR_INVALID_JSON_CONTENT", 0.0
         
         except json.JSONDecodeError:
@@ -1391,9 +1141,9 @@ async def verify_triplets(
     
     if not tasks: return [], counts
 
-    logger.info(f"verifying {len(tasks)} triplets...")
+    logger.info(f"Starting verification of {len(tasks)} triplets using meta-llama/llama-3.3-70b-instruct with log probability analysis...")
     verification_results = await asyncio.gather(*tasks, return_exceptions=True)
-    logger.info(f"verification done")
+    logger.info(f"Llama verification batch complete - processing results...")
 
     for i, res_tuple_or_exc in enumerate(verification_results):
         original_triplet = triplet_list[i]
@@ -1414,13 +1164,31 @@ async def verify_triplets(
         if "ERROR" in decision:
             counts['errors'] += 1
             logger.warning(f"rejected: {subject} | {predicate} | {obj}")
-        elif decision == "YES" and confidence >= verification_cutoff:
-            verified_triplets_for_abstract.append(original_triplet)
-            counts['verified_yes'] += 1
-            logger.info(f"verified: {subject} | {predicate} | {obj}")
+        elif decision == "YES":
+            # Handle both log probability and regular confidence thresholds
+            if confidence < 0:  # Log probability (negative values, closer to 0 = higher confidence)
+                log_prob_threshold = -2.0  # logprobs threshold
+                is_confident = confidence >= log_prob_threshold
+                conf_type = "logprob"
+                logger.info(f"Log probability threshold comparison: {confidence:.4f} >= {log_prob_threshold} = {is_confident}")
+            else:  # normal conf reported from llm
+                is_confident = confidence >= verification_cutoff
+                conf_type = "conf"
+                logger.info(f"Regular confidence threshold comparison: {confidence:.4f} >= {verification_cutoff} = {is_confident}")
+            
+            logger.info(f"Processing YES decision for: {subject}|{predicate}|{obj}")
+            logger.info(f"Confidence type: {conf_type}, value: {confidence:.4f}, passes threshold: {is_confident}")
+            
+            if is_confident:
+                verified_triplets_for_abstract.append(original_triplet)
+                counts['verified_yes'] += 1
+                logger.info(f"VERIFIED: {subject} | {predicate} | {obj} ({conf_type}: {confidence:.3f})")
+            else:
+                counts['verified_no'] += 1
+                logger.warning(f"REJECTED (low confidence): {subject} | {predicate} | {obj} ({conf_type}: {confidence:.3f})")
         else:
             counts['verified_no'] += 1
-            logger.warning(f"rejected: {subject} | {predicate} | {obj} (conf: {confidence:.2f})")
+            logger.warning(f"rejected: {subject} | {predicate} | {obj} (decision: {decision})")
 
     try:
         with open(cache_file_path, 'wb') as f:
