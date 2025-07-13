@@ -125,7 +125,7 @@ def train_classifier(training_data, test_size=0.2):
     logger.info(f"Classification Report:\n{report}")
     
     current_script_dir = Path(__file__).parent
-    models_base_dir = current_script_dir / "trained_relevance_models_central"
+    models_base_dir = current_script_dir / "trained_relevance_models"
     model_name = "synthetic_shorebird_classifier_v2" 
     models_dir = models_base_dir / model_name
     models_dir.mkdir(parents=True, exist_ok=True)

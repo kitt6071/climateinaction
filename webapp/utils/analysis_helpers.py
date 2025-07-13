@@ -1,7 +1,6 @@
 import config
 
 def get_triplet_by_id(triplet_id):
-    """Get a specific triplet by its ID"""
     for triplet in config.triplets_data:
         if triplet.get('id') == triplet_id:
             return triplet

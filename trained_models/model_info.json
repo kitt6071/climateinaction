@@ -1,8 +1,0 @@
-{
-  "embedding_model": "all-mpnet-base-v2",
-  "classifier_type": "LogisticRegression",
-  "test_accuracy": 1.0,
-  "training_examples": 250,
-  "positive_examples": 50,
-  "negative_examples": 200
-}

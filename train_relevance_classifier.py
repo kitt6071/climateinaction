@@ -499,7 +499,7 @@ def train_embedding_classifier(training_data: List[Dict[str, Union[str, bool]]],
 DEFAULT_TARGET_SAMPLES_PER_CLASS = 50
 DEFAULT_MAX_TOTAL_ABSTRACTS_TO_SCAN = 10000
 DEFAULT_MODEL_FOR_RELEVANCE_LABELS = "google/gemini-2.0-flash-001"
-CENTRAL_MODELS_BASE_DIR_NAME = "trained_relevance_models_central"
+CENTRAL_MODELS_BASE_DIR_NAME = "trained_relevance_models"
 ABSTRACT_FILE_NAME = "all_abstracts.parquet"
 FILE_BATCH_SIZE = 500
 
