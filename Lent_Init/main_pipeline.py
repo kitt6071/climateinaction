@@ -136,7 +136,7 @@ async def run_main_pipeline_logic(args):
         # try embedding classifier first
         if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
             logger.debug(f"Using embedding classifier for '{title[:30]}...'")
-            return predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.4)
+            return predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.30)
         elif legacy_classifier and vectorizer:
             logger.debug(f"Using TF-IDF for '{title[:30]}...'")
             return predict_relevance_local(abstract, vectorizer, legacy_classifier)
@@ -149,8 +149,8 @@ async def run_main_pipeline_logic(args):
             logger.info(f"Hit limit ({max_limit})")
             break
 
-        logger.info(f"Loading batch: skip={skip_rows}, max={batch_size}")
-        df_batch = load_data_with_offset("all_abstracts.parquet", skip_rows, batch_size)
+        logger.info(f"Loading batch: skip={skip_rows}, max={batch_size} (shorebird papers found so far: {processed_count})")
+        df_batch = load_data_with_offset("shorebirds.parquet", skip_rows, batch_size)
         
         if len(df_batch) == 0:
             logger.info("No more data")

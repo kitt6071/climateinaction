@@ -1,0 +1,10 @@
+Test Accuracy on Real Abstracts: 0.7600
+
+              precision    recall  f1-score   support
+
+Non-Relevant       0.76      0.99      0.86       150
+    Relevant       0.75      0.06      0.11        50
+
+    accuracy                           0.76       200
+   macro avg       0.76      0.53      0.49       200
+weighted avg       0.76      0.76      0.67       200

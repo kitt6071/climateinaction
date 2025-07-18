@@ -150,7 +150,8 @@ def predict_relevance_embeddings(abstract_text: str, model, classifier, threshol
         relevance_score = probabilities[1]  # Probability of being relevant (shorebird)
         is_relevant = relevance_score >= threshold
         
-        logger.debug(f"Embedding classifier: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
+        if relevance_score > 0.3:  # Log potential shorebird papers
+            logger.info(f"Embedding classifier: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
         return bool(is_relevant)
     except Exception as e:
         logger.error(f"Error in embedding relevance prediction: {e}")

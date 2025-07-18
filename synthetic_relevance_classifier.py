@@ -101,8 +101,8 @@ def llm_generate(prompt: str, system: str, model: str, temperature: float = 0.1,
         if llm_setup and llm_setup.get('use_openrouter', False):
             api_key = os.getenv('OPENROUTER_API_KEY')
             if not api_key:
-                logger.error("OPENROUTER_API_KEY not found in environment variables for llm_generate")
-                raise ValueError("OPENROUTER_API_KEY not found for llm_generate")
+                logger.error("OPENROUTER_API_KEY not found")
+                raise ValueError("OPENROUTER_API_KEY not found")
 
             client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
             
@@ -161,6 +161,7 @@ def llm_generate(prompt: str, system: str, model: str, temperature: float = 0.1,
 
 SHOREBIRD_SPECIES = [
     # Sandpipers and allies
+    "Shorebird",
     "Dunlin (Calidris alpina)",
     "Sanderling (Calidris alba)", 
     "Red Knot (Calidris canutus)",
@@ -327,7 +328,7 @@ def setup_llm():
         logger.error("OPENROUTER_API_KEY not found in environment variables")
         raise ValueError("OPENROUTER_API_KEY not found in environment variables")
     
-    model = "deepseek/deepseek-r1"
+    model = "deepseek/deepseek-r1-0528"
     logger.info(f"Using LLM: '{model}' via OpenRouter")
     
     return {
@@ -338,28 +339,22 @@ def setup_llm():
 
 def generate_shorebird_abstracts(num_abstracts: int = 100) -> List[str]:
     
+    KEYWORD_ABSTRACT_LENGTH = 512
     llm_setup = setup_llm()
     abstracts = []
+    generated_species = []  # track species to avoid repetition
     
-    system_prompt = """
-    You are a scientific abstract generator specializing in shorebird research. Generate realistic, detailed abstracts for shorebird studies that cover diverse research topics, methodologies, and findings.
-
-    Requirements:
-    1. Use scientific language and terminology appropriate for ornithological research
-    2. Include specific quantitative details (sample sizes, effect sizes, statistical values)
-    3. Mention specific locations, seasons, or time periods
-    4. Include methodology details (field observations, telemetry, genetic analysis, etc.)
-    5. Present clear findings and conservation implications
-    6. Vary the writing style and structure while maintaining scientific rigor
-    7. Include both positive and negative findings (not all studies show dramatic effects)
-    8. Cover different life stages (breeding, migration, wintering, juveniles, adults)
-    9. Include both individual-level and population-level studies
-    10. Vary the scale (local, regional, flyway-wide, global)
-
-    Generate exactly ONE abstract of 150-250 words. Do not include a title or any other text.
-    """
+    system_prompt = """You are an expert in generating synthetic academic literature. Your task is to create highly specific and realistic research abstracts about shorebirds. The abstracts must focus on species from the Charadriiformes order (plovers, sandpipers, oystercatchers, etc.) and should be indistinguishable from genuine scientific research. Use a formal, academic tone, include quantitative details (e.g., sample sizes, p-values, confidence intervals), specific geographic locations, and clear methodologies and conservation implications. Ensure the content is narrowly focused on shorebird ecology, behavior, or conservation."""
     
-    logger.info(f"Generating {num_abstracts} diverse shorebird abstracts...")
+    logger.info(f"Generating {num_abstracts} highly-specific shorebird abstracts...")
+    
+    schema = {
+        "type": "object",
+        "properties": {
+            "abstract": {"type": "string"}
+        },
+        "required": ["abstract"]
+    }
     
     for i in range(num_abstracts):
         species = random.choice(SHOREBIRD_SPECIES)
@@ -367,34 +362,54 @@ def generate_shorebird_abstracts(num_abstracts: int = 100) -> List[str]:
         threat_category = random.choice(list(THREAT_CATEGORIES.keys()))
         specific_threat = random.choice(THREAT_CATEGORIES[threat_category])
         
-        prompt_templates = [
-            f"Generate an abstract about {species} focusing on {context} in relation to {specific_threat}.",
-            f"Create an abstract examining how {specific_threat} affects {species} {context}.",
-            f"Write an abstract about a {context} study of {species} dealing with {specific_threat}.",
-            f"Generate an abstract investigating {species} response to {specific_threat} through {context} research.",
-            f"Create an abstract about {species} showing {context} patterns influenced by {specific_threat}."
-        ]
+        # Add variety instruction
+        variety_instruction = ""
+        if len(generated_species) > 5:
+            recent_species = generated_species[-5:]
+            variety_instruction = f" Ensure variety - avoid similarity to recent abstracts about: {', '.join(recent_species)}."
         
-        prompt = random.choice(prompt_templates)
-        
+        prompt = f"""Generate one highly realistic and specific shorebird research abstract about {species}.
+                    Focus on the context of {context} in relation to the threat of {specific_threat}.
+                    The abstract must be technical, academic, and specific to the Charadriiformes order.
+                    Length: {KEYWORD_ABSTRACT_LENGTH//2}-{KEYWORD_ABSTRACT_LENGTH} characters.{variety_instruction}
+
+                    Example abstract structure:
+                    1.  Introduction: Briefly introduce the species, context, and threat.
+                    2.  Methods: Describe the study location, duration, and methods used (e.g., GPS tracking, stable isotope analysis, population modeling).
+                    3.  Results: Present key findings with quantitative data (e.g., "nest success was 15% lower in high-disturbance areas (p < 0.05)").
+                    4.  Conclusion: State the implications for conservation or understanding of shorebird ecology.
+
+                    Respond with ONLY a JSON object containing the 'abstract' field."""
+                    
         try:
-            abstract = llm_generate(
+            response = llm_generate(
                 prompt=prompt,
                 system=system_prompt,
                 model=llm_setup["model"],
-                temperature=0.7,
+                temperature=0.8,
                 timeout=120,
+                format_schema=schema,
                 llm_setup=llm_setup
             )
             
-            if abstract and len(abstract.strip()) > 100:
-                abstracts.append(abstract.strip())
-                logger.info(f"Generated abstract {i+1}/{num_abstracts}: {species}")
-            else:
-                logger.warning(f"Generated abstract {i+1} too short, skipping")
-                
+            if response:
+                try:
+                    result = json.loads(response)
+                    abstract = result.get("abstract", "").strip()
+                    if abstract and len(abstract) > 150:
+                        abstracts.append(abstract)
+                        generated_species.append(species.split('(')[0].strip())
+                        logger.info(f"Generated positive abstract {i+1}/{num_abstracts}: {species}")
+                    else:
+                        logger.warning(f"Generated positive abstract {i+1} too short, skipping.")
+                except json.JSONDecodeError:
+                    if len(response.strip()) > 150:
+                        abstracts.append(response.strip())
+                        generated_species.append(species.split('(')[0].strip())
+                        logger.info(f"Generated positive abstract {i+1}/{num_abstracts} (non-JSON): {species}")
+            
         except Exception as e:
-            logger.error(f"Error generating abstract {i+1}: {e}")
+            logger.error(f"Error generating positive abstract {i+1}: {e}")
             continue
     
     logger.info(f"Successfully generated {len(abstracts)} shorebird abstracts")
@@ -402,123 +417,98 @@ def generate_shorebird_abstracts(num_abstracts: int = 100) -> List[str]:
 
 def generate_challenging_negatives(num_negatives: int = 150) -> List[str]:
     
+    KEYWORD_ABSTRACT_LENGTH = 512
     llm_setup = setup_llm()
     abstracts = []
+    generated_species = []  # track species to avoid repetition
     
-    challenging_species = [
-        # Waterfowl (often in same habitats)
-        "Mallard (Anas platyrhynchos)",
-        "Northern Pintail (Anas acuta)",
-        "Blue-winged Teal (Spatula discors)",
-        "Canvasback (Aythya valisineria)",
-        "Redhead (Aythya americana)",
-        "Ring-necked Duck (Aythya collaris)",
-        "Bufflehead (Bucephala albeola)",
-        "Common Goldeneye (Bucephala clangula)",
-        
-        # Similar Habitat Herons
-        "Great Blue Heron (Ardea herodias)",
-        "Great Egret (Ardea alba)",
-        "Snowy Egret (Egretta thula)",
-        "Tricolored Heron (Egretta tricolor)",
-        "Green Heron (Butorides virescens)",
-        "Black-crowned Night-Heron (Nycticorax nycticorax)",
-        "American Bittern (Botaurus lentiginosus)",
-        "Least Bittern (Ixobrychus exilis)",
-        
-        # Rails and coots (marshland species)
-        "Virginia Rail (Rallus limicola)",
-        "Sora (Porzana carolina)",
-        "King Rail (Rallus elegans)",
-        "Clapper Rail (Rallus crepitans)",
-        "American Coot (Fulica americana)",
-        "Common Gallinule (Gallinula galeata)",
-        
-        # Gulls and terns (coastal, but not shorebirds)
-        "Ring-billed Gull (Larus delawarensis)",
-        "Herring Gull (Larus argentatus)",
-        "Laughing Gull (Leucophaeus atricilla)",
-        "Forster's Tern (Sterna forsteri)",
-        "Least Tern (Sternula antillarum)",
-        "Caspian Tern (Hydroprogne caspia)",
-        
-        # Raptors
-        "Bald Eagle (Haliaeetus leucocephalus)",
-        "Osprey (Pandion haliaetus)",
-        "Northern Harrier (Circus hudsonius)",
-        "Red-tailed Hawk (Buteo jamaicensis)",
-        "Cooper's Hawk (Accipiter cooperii)",
-        "American Kestrel (Falco sparverius)",
-        "Peregrine Falcon (Falco peregrinus)",
-        
-        # Songbirds
-        "Red-winged Blackbird (Agelaius phoeniceus)",
-        "Yellow Warbler (Setophaga petechia)",
-        "Common Yellowthroat (Geothlypis trichas)",
-        "Marsh Wren (Cistothorus palustris)",
-        "Sedge Wren (Cistothorus platensis)",
-        "Savannah Sparrow (Passerculus sandwichensis)",
-        "Swamp Sparrow (Melospiza georgiana)",
-        
-        # Seabirds
-        "Brown Pelican (Pelecanus occidentalis)",
-        "Double-crested Cormorant (Phalacrocorax auritus)",
-        "Northern Gannet (Morus bassanus)",
-        "Common Loon (Gavia immer)",
-        "Pied-billed Grebe (Podilymbus podiceps)",
-        "Horned Grebe (Podiceps auritus)",
-        
-        # Game birds
-        "Wild Turkey (Meleagris gallopavo)",
-        "Northern Bobwhite (Colinus virginianus)",
-        "Ring-necked Pheasant (Phasianus colchicus)",
-        "Ruffed Grouse (Bonasa umbellus)"
-    ]
+    # refined list focusing on common confusion species for shorebirds
+    challenging_species_by_class = {
+        "Gulls & Terns": [
+            "Ring-billed Gull (Larus delawarensis)", "Herring Gull (Larus argentatus)", "Laughing Gull (Leucophaeus atricilla)",
+            "Forster's Tern (Sterna forsteri)", "Least Tern (Sternula antillarum)", "Caspian Tern (Hydroprogne caspia)",
+            "Black Skimmer (Rynchops niger)"
+        ],
+        "Herons & Egrets": [
+            "Great Blue Heron (Ardea herodias)", "Great Egret (Ardea alba)", "Snowy Egret (Egretta thula)",
+            "Tricolored Heron (Egretta tricolor)", "Black-crowned Night-Heron (Nycticorax nycticorax)",
+        ],
+        "Waterfowl (Coastal)": [
+            "Mallard (Anas platyrhynchos)", "Northern Pintail (Anas acuta)", "American Black Duck (Anas rubripes)",
+            "Brant (Branta bernicla)", "Common Eider (Somateria mollissima)"
+        ],
+        "Rails & Coots": [
+            "Clapper Rail (Rallus crepitans)", "Virginia Rail (Rallus limicola)", "American Coot (Fulica americana)"
+        ],
+        "Other Coastal Birds": [
+            "Brown Pelican (Pelecanus occidentalis)", "Double-crested Cormorant (Phalacrocorax auritus)",
+            "Osprey (Pandion haliaetus)", "Belted Kingfisher (Megaceryle alcyon)"
+        ]
+    }
     
-    system_prompt = """
-    You are a scientific abstract generator. Generate realistic abstracts for bird research that are NOT about shorebirds. 
-    
-    Focus on:
-    1. Waterfowl (ducks, geese, swans)
-    2. Wading birds (herons, egrets, ibises)
-    3. Raptors (hawks, eagles, owls)
-    4. Songbirds (warblers, sparrows, finches)
-    5. Seabirds (pelicans, cormorants, gannets)
-    6. Game birds (turkey, quail, grouse)
-    7. Rails and coots
-    8. Gulls and terns
-    
-    Use scientific language and methodology similar to shorebird research to create challenging negative examples.
-    Include quantitative details, specific locations, and conservation implications.
-    Generate exactly ONE abstract of 150-250 words. Do not include a title.
-    """
+    system_prompt = """You are an expert in generating synthetic academic literature. Your task is to create realistic research abstracts about birds that are explicitly NOT shorebirds (i.e., not from the Charadriiformes order). These abstracts should be challenging negative examples that discuss bird-threat relationships but for non-shorebird species. Include threats like habitat loss, climate change, pollution, and human disturbance affecting songbirds, waterfowl, raptors, seabirds, and other bird groups. The goal is to train a classifier to distinguish shorebird research from other bird research."""
     
     abstracts = []
+    schema = {
+        "type": "object",
+        "properties": {
+            "abstract": {"type": "string"}
+        },
+        "required": ["abstract"]
+    }
     
-    logger.info(f"Generating {num_negatives} challenging negative examples...")
+    logger.info(f"Generating {num_negatives} new, more challenging negative examples...")
     
     for i in range(num_negatives):
-        species = random.choice(challenging_species)
+        bird_class = random.choice(list(challenging_species_by_class.keys()))
+        species = random.choice(challenging_species_by_class[bird_class])
         context = random.choice(RESEARCH_CONTEXTS)
         
-        prompt = f"Generate an abstract about {species} focusing on {context} research."
+        # Add variety instruction
+        variety_instruction = ""
+        if len(generated_species) > 5:
+            recent_species = generated_species[-5:]
+            variety_instruction = f" Ensure the topic is distinct from recent abstracts about: {', '.join(recent_species)}."
+        
+        prompt = f"""Generate one realistic research abstract about the {bird_class}, specifically focusing on {species}. The context is {context}.
+                    The abstract MUST NOT be about shorebirds (order Charadriiformes), but should use similar scientific language and methodologies.
+                    It must be a challenging negative example for a shorebird relevance classifier.
+                    Length: {KEYWORD_ABSTRACT_LENGTH//2}-{KEYWORD_ABSTRACT_LENGTH} characters.{variety_instruction}
+
+                    Example topics for non-shorebirds:
+                    - Foraging ecology of Laughing Gulls in urban coastal environments.
+                    - Migratory patterns of Great Blue Herons using satellite telemetry.
+                    - Effects of oil spills on Brown Pelican breeding success.
+
+                    Respond with ONLY a JSON object containing the 'abstract' field."""
         
         try:
-            abstract = llm_generate(
+            response = llm_generate(
                 prompt=prompt,
                 system=system_prompt,
                 model=llm_setup["model"],
-                temperature=0.7,
+                temperature=0.8,
                 timeout=120,
+                format_schema=schema,
                 llm_setup=llm_setup
             )
             
-            if abstract and len(abstract.strip()) > 100:
-                abstracts.append(abstract.strip())
-                logger.info(f"Generated negative {i+1}/{num_negatives}: {species}")
-            else:
-                logger.warning(f"Generated negative {i+1} too short, skipping")
-                
+            if response:
+                try:
+                    result = json.loads(response)
+                    abstract = result.get("abstract", "").strip()
+                    if abstract and len(abstract) > 150:
+                        abstracts.append(abstract)
+                        generated_species.append(species.split('(')[0].strip())
+                        logger.info(f"Generated negative {i+1}/{num_negatives}: {species} ({bird_class})")
+                    else:
+                        logger.warning(f"Generated negative {i+1} was too short or empty, skipping.")
+                except json.JSONDecodeError:
+                    if len(response.strip()) > 150:
+                        abstracts.append(response.strip())
+                        generated_species.append(species.split('(')[0].strip())
+                        logger.info(f"Generated negative {i+1}/{num_negatives} (non-JSON): {species} ({bird_class})")
+            
         except Exception as e:
             logger.error(f"Error generating negative {i+1}: {e}")
             continue
@@ -526,91 +516,257 @@ def generate_challenging_negatives(num_negatives: int = 150) -> List[str]:
     logger.info(f"Successfully generated {len(abstracts)} challenging negative examples")
     return abstracts
 
-def load_negatives_from_parquet(num_negatives: int = 200) -> List[str]:
+def load_real_shorebird_abstracts_from_parquet(num_positives: int = 50) -> List[str]:
     try:
         import polars as pl
-        
-        current_dir = Path(__file__).parent
-        parquet_path = current_dir / "all_abstracts.parquet"
-        
+        import re
+
+        parquet_path = Path("/Users/kittsonhamill/Desktop/all_abstracts.parquet")
         if not parquet_path.exists():
             logger.warning(f"Parquet file not found at {parquet_path}")
             return []
+
+        logger.info(f"Loading real shorebird abstracts from parquet file...")
+        df = pl.read_parquet(parquet_path, n_rows=100000)  # scan first 100k rows
+        df = df.drop_nulls(subset=["title", "abstract"])
+
+        # shorebird keywords for positive identification
+        shorebird_keywords = [
+            "shorebird", "plover", "sandpiper", "oystercatcher", "turnstone", "godwit", "curlew", 
+            "yellowleg", "dowitcher", "avocet", "stilt", "dunlin", "sanderling", "killdeer",
+            "whimbrel", "ruddy turnstone", "semipalmated", "charadriiformes", "charadrius", 
+            "calidris", "haematopus", "numenius", "limosa", "arenaria", "tringa", "actitis", 
+            "limnodromus", "recurvirostra", "himantopus"
+        ]
+
+        # find abstracts mentioning shorebird terms
+        shorebird_pattern = "|".join([re.escape(keyword) for keyword in shorebird_keywords])
         
-        logger.info(f"Loading {num_negatives} negatives from beginning of parquet")
+        df_positives = df.filter(
+            (pl.col("abstract").str.to_lowercase().str.contains(shorebird_pattern, literal=False)) |
+            (pl.col("title").str.to_lowercase().str.contains(shorebird_pattern, literal=False))
+        )
         
-        df = pl.read_parquet(parquet_path).head(num_negatives)
-        df = df.drop_nulls(["title", "abstract"])
+        if len(df_positives) < num_positives:
+            logger.warning(f"Found only {len(df_positives)} real shorebird abstracts. Using all of them.")
+            num_positives = len(df_positives)
         
-        real_negatives = []
-        for i, row in enumerate(df.iter_rows(named=True)):
-            abstract = row["abstract"]
-            title = row["title"] 
-            if abstract and len(abstract.strip()) > 50:
-                real_negatives.append(abstract.strip())
-                logger.info(f"negative {i+1}: '{title[:50]}...'")
+        df_sampled = df_positives.sample(n=num_positives, seed=42)
+        real_shorebird_abstracts = df_sampled["abstract"].to_list()
         
-        logger.info(f"Loaded {len(real_negatives)} negative examples from parquet")
-        return real_negatives
+        logger.info(f"Successfully loaded {len(real_shorebird_abstracts)} real shorebird abstracts.")
+        return real_shorebird_abstracts
         
     except Exception as e:
-        logger.error(f"Error loading negatives: {e}")
+        logger.error(f"Error loading real shorebird abstracts: {e}", exc_info=True)
         return []
+
+def load_real_bird_negatives_from_parquet(num_negatives: int = 100) -> List[str]:
+    try:
+        import polars as pl
+        import re
+
+        parquet_path = Path("/Users/kittsonhamill/Desktop/all_abstracts.parquet")
+        if not parquet_path.exists():
+            logger.warning(f"Parquet file not found at {parquet_path}")
+            return []
+
+        logger.info(f"Loading real bird negative examples from parquet file...")
+        df = pl.read_parquet(parquet_path, n_rows=100000)  # scan first 100k rows
+        df = df.drop_nulls(subset=["title", "abstract"])
+
+        # bird keywords (but not shorebirds)
+        general_bird_keywords = [
+            "songbird", "waterfowl", "duck", "goose", "swan", "heron", "egret", "falcon", "hawk", 
+            "eagle", "owl", "crow", "raven", "sparrow", "warbler", "finch", "wren", "swallow", 
+            "flycatcher", "thrush", "robin", "blackbird", "cardinal", "blue jay", "woodpecker",
+            "hummingbird", "pelican", "cormorant", "gull", "tern", "albatross", "petrel", 
+            "penguin", "seabird", "raptor", "passerine", "galliformes", "anseriformes", 
+            "falconiformes", "strigiformes", "piciformes", "passeriformes", "procellariiformes"
+        ]
+
+        # Shorebird terms to exclude
+        shorebird_exclude_keywords = [
+            "shorebird", "plover", "sandpiper", "oystercatcher", "turnstone", "godwit", "curlew", 
+            "yellowleg", "dowitcher", "avocet", "stilt", "charadriiformes"
+        ]
+
+        bird_pattern = "|".join([re.escape(keyword) for keyword in general_bird_keywords])
+        shorebird_pattern = "|".join([re.escape(keyword) for keyword in shorebird_exclude_keywords])
+
+        # find bird abstracts that don't mention shorebirds
+        df_bird_negatives = df.filter(
+            ((pl.col("abstract").str.to_lowercase().str.contains(bird_pattern, literal=False)) |
+             (pl.col("title").str.to_lowercase().str.contains(bird_pattern, literal=False))) &
+            (~pl.col("abstract").str.to_lowercase().str.contains(shorebird_pattern, literal=False)) &
+            (~pl.col("title").str.to_lowercase().str.contains(shorebird_pattern, literal=False))
+        )
+        
+        if len(df_bird_negatives) < num_negatives:
+            logger.warning(f"Found only {len(df_bird_negatives)} real bird negatives. Using all of them.")
+            num_negatives = len(df_bird_negatives)
+        
+        df_sampled = df_bird_negatives.sample(n=num_negatives, seed=42)
+        real_bird_negatives = df_sampled["abstract"].to_list()
+        
+        logger.info(f"Successfully loaded {len(real_bird_negatives)} real bird negative examples.")
+        return real_bird_negatives
+        
+    except Exception as e:
+        logger.error(f"Error loading real bird negatives: {e}", exc_info=True)
+        return []
+
+def load_negatives_from_parquet(num_hard_negatives: int = 200, num_easy_negatives: int = 100) -> List[str]:
+    try:
+        import polars as pl
+        import re
+
+        parquet_path = Path("/Users/kittsonhamill/Desktop/all_abstracts.parquet")
+        if not parquet_path.exists():
+            logger.warning(f"Parquet file not found at {parquet_path}")
+            return []
+
+        df = pl.read_parquet(parquet_path, n_rows=250000) # Scan a larger portion
+        df = df.drop_nulls(subset=["title", "abstract"])
+
+        # 1. get easy negatives (from the start of the file)
+        easy_negatives = []
+        if num_easy_negatives > 0:
+            logger.info(f"Loading {num_easy_negatives} easy negatives from the start of the parquet file.")
+            easy_negatives_df = df.head(num_easy_negatives)
+            easy_negatives = easy_negatives_df["abstract"].to_list()
+            logger.info(f"Loaded {len(easy_negatives)} easy negatives.")
+
+        # 2. perform hard negative mining
+        hard_negatives = []
+        if num_hard_negatives > 0:
+            logger.info("Starting hard negative mining...")
+            shorebird_common_names = [name.split('(')[0].strip().lower() for name in SHOREBIRD_SPECIES]
+            shorebird_name_pattern = "|".join([re.escape(name) for name in shorebird_common_names])
+            hard_negative_keywords = ["bird", "avian", "coastal", "wetland", "ecology", "migration", "foraging", "seabird"]
+            keyword_pattern = "|".join(hard_negative_keywords)
+
+            df_hard = df.filter(
+                (pl.col("abstract").str.contains(keyword_pattern, literal=False) |
+                 pl.col("title").str.contains(keyword_pattern, literal=False)) &
+                (~pl.col("abstract").str.to_lowercase().str.contains(shorebird_name_pattern, literal=False)) &
+                (~pl.col("title").str.to_lowercase().str.contains(shorebird_name_pattern, literal=False))
+            )
+            
+            if len(df_hard) < num_hard_negatives:
+                logger.warning(f"Found only {len(df_hard)} hard negatives. Using all of them.")
+            
+            df_sampled = df_hard.sample(n=min(num_hard_negatives, len(df_hard)), seed=42)
+            hard_negatives = df_sampled["abstract"].to_list()
+            logger.info(f"Successfully mined {len(hard_negatives)} hard negative examples.")
+
+        return easy_negatives + hard_negatives
+        
+    except Exception as e:
+        logger.error(f"Error during negative example loading: {e}", exc_info=True)
+        return []
+
 def main():
     output_dir = Path("data_to_review")
     output_dir.mkdir(exist_ok=True)
     
-    real_negatives = load_negatives_from_parquet(num_negatives=200)
+    logger.info("Creating real test set")
+    # create a test set of real abstracts from parquet
+    real_shorebird_test = load_real_shorebird_abstracts_from_parquet(num_positives=50)
+    real_bird_negatives_test = load_real_bird_negatives_from_parquet(num_negatives=100)
+    general_negatives_test = load_negatives_from_parquet(num_hard_negatives=25, num_easy_negatives=25)
     
-    positive_abstracts = generate_shorebird_abstracts(num_abstracts=100)
-    synthetic_negatives = generate_challenging_negatives(num_negatives=150)
+    # create test set
+    test_data = []
     
-    # Combine all negatives
-    all_negatives = real_negatives + synthetic_negatives
+    for abstract in real_shorebird_test:
+        test_data.append({
+            "text": abstract,
+            "label": 1,
+            "category": "real_shorebird_test"
+        })
     
-    positive_file = output_dir / "shorebird_positives.json"
-    with open(positive_file, 'w', encoding='utf-8') as f:
-        json.dump(positive_abstracts, f, indent=2, ensure_ascii=False)
-    logger.info(f"Saved {len(positive_abstracts)} positive examples to {positive_file}")
+    for abstract in real_bird_negatives_test:
+        test_data.append({
+            "text": abstract,
+            "label": 0,
+            "category": "real_bird_negative_test"
+        })
     
-    negative_file = output_dir / "shorebird_negatives.json"
-    with open(negative_file, 'w', encoding='utf-8') as f:
-        json.dump(all_negatives, f, indent=2, ensure_ascii=False)
-    logger.info(f"Saved {len(all_negatives)} negative examples to {negative_file} ({len(real_negatives)} real + {len(synthetic_negatives)} synthetic)")
+    for abstract in general_negatives_test:
+        test_data.append({
+            "text": abstract,
+            "label": 0,
+            "category": "general_negative_test"
+        })
     
+    random.shuffle(test_data)
+    
+    test_file = output_dir / "real_test_data.json"
+    with open(test_file, 'w', encoding='utf-8') as f:
+        json.dump(test_data, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Created real test set: {len(real_shorebird_test)} shorebird + {len(real_bird_negatives_test)} bird negatives + {len(general_negatives_test)} general negatives = {len(test_data)} total")
+    
+    logger.info("Generating synthetic training data")
+    # generate synthetic training data (larger amounts to compensate for domain gap)
+    synthetic_positives = generate_shorebird_abstracts(num_abstracts=200)  # More synthetic positives
+    synthetic_negatives = generate_challenging_negatives(num_negatives=400)  # More challenging negatives
+    general_negatives_train = load_negatives_from_parquet(num_hard_negatives=100, num_easy_negatives=50)
+    
+    # create training data (all synthetic + some real negatives)
     training_data = []
     
-    for abstract in positive_abstracts:
+    for abstract in synthetic_positives:
         training_data.append({
             "text": abstract,
             "label": 1,
-            "category": "shorebird_relevant"
-        })
-    
-    for abstract in real_negatives:
-        training_data.append({
-            "text": abstract,
-            "label": 0,
-            "category": "real_negative"
+            "category": "synthetic_shorebird"
         })
     
     for abstract in synthetic_negatives:
         training_data.append({
             "text": abstract,
             "label": 0,
-            "category": "synthetic_negative"
+            "category": "synthetic_bird_negative"
+        })
+    
+    for abstract in general_negatives_train:
+        training_data.append({
+            "text": abstract,
+            "label": 0,
+            "category": "general_negative_train"
         })
     
     random.shuffle(training_data)
     
-    training_file = output_dir / "training_data.json"
+    # save training and test data separately
+    training_file = output_dir / "synthetic_training_data.json"
     with open(training_file, 'w', encoding='utf-8') as f:
         json.dump(training_data, f, indent=2, ensure_ascii=False)
     
-    logger.info(f"Positive examples: {len(positive_abstracts)}")
-    logger.info(f"Negative examples: {len(all_negatives)} ({len(real_negatives)} real + {len(synthetic_negatives)} synthetic)")
-    logger.info(f"Total training examples: {len(training_data)}")
-    logger.info(f"Saved combined dataset to {training_file}")
+    # also save individual components for inspection
+    positive_file = output_dir / "shorebird_positives.json"
+    with open(positive_file, 'w', encoding='utf-8') as f:
+        json.dump(synthetic_positives, f, indent=2, ensure_ascii=False)
+    
+    negative_file = output_dir / "shorebird_negatives.json"
+    with open(negative_file, 'w', encoding='utf-8') as f:
+        json.dump(synthetic_negatives + general_negatives_train, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Final dataset summary:")
+    logger.info(f"TRAINING SET (synthetic):")
+    logger.info(f"  - Synthetic shorebird positives: {len(synthetic_positives)}")
+    logger.info(f"  - Synthetic bird negatives: {len(synthetic_negatives)}")
+    logger.info(f"  - General negatives: {len(general_negatives_train)}")
+    logger.info(f"  - Total training examples: {len(training_data)}")
+    logger.info(f"TEST SET (real abstracts):")
+    logger.info(f"  - Real shorebird positives: {len(real_shorebird_test)}")
+    logger.info(f"  - Real bird negatives: {len(real_bird_negatives_test)}")
+    logger.info(f"  - General negatives: {len(general_negatives_test)}")
+    logger.info(f"  - Total test examples: {len(test_data)}")
+    logger.info(f"Saved training data to {training_file}")
+    logger.info(f"Saved test data to {test_file}")
 
 if __name__ == "__main__":
     main() 

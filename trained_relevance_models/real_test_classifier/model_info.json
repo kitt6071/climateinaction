@@ -1,0 +1,6 @@
+{
+  "model_name": "real_test_classifier",
+  "training_examples": 923,
+  "training_method": "corpus_validated_synthetic_train",
+  "validation_method": "enhanced_corpus_with_shorebird_papers"
+}
