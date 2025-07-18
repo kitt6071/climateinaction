@@ -131,6 +131,7 @@ async def run_main_pipeline_logic(args):
     total_scanned = 0
 
     logger.info(f"Starting data load from parquet (batch: {batch_size}, max: {max_limit if max_limit != float('inf') else 'all'}, chunk: {BATCH_CONFIG['processing_batch_size']})")
+    irrelevant_file = results_path / "irrelevant_abstracts.jsonl"
 
     async def check_relevance(title, abstract, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
         # try embedding classifier first
@@ -226,6 +227,10 @@ async def run_main_pipeline_logic(args):
                     if processed_count >= max_limit:
                         logger.info(f"Hit limit in inner loop ({max_limit})")
                         break 
+                else:
+                    with open(irrelevant_file, 'a', encoding='utf-8') as f:
+                        import json
+                        f.write(json.dumps({"title": batch_items[i]['title'], "abstract": batch_items[i]['abstract'], "doi": batch_items[i]['doi']}) + '\n')
         
         if processed_count >= max_limit:
             logger.info(f"Hit limit in outer loop ({max_limit})")
