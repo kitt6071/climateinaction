@@ -13,13 +13,13 @@ import argparse
 from .setup import setup_llm
 
 BATCH_CONFIG = {
-    'summary_batch_size': 5, 
-    'triplet_batch_size': 3,   
-    'max_summary_workers': 20, 
-    'max_triplet_workers': 15, 
-    'max_enrichment_workers': 10, 
+    'summary_batch_size': 20, 
+    'triplet_batch_size': 15,   
+    'max_summary_workers': 50, 
+    'max_triplet_workers': 40, 
+    'max_enrichment_workers': 30, 
     'enable_batch_processing': True,
-    'processing_batch_size': 500
+    'processing_batch_size': 2000
 }
 
 logger = logging.getLogger("pipeline")
