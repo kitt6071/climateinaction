@@ -65,6 +65,7 @@ async def run_main_pipeline_logic(args):
     logger.info(f"Max abstracts: {max_limit if max_limit != float('inf') else 'all'}, chunk size: {BATCH_CONFIG['processing_batch_size']}")
 
     llm_setup = llm_sys
+    llm_setup['model'] = model_name
 
     try:
         nltk.download('punkt', quiet=True)
@@ -635,7 +636,7 @@ def run_batch_enabled_pipeline(args):
 def run_wikispecies_verification_logic(args):
     # basic setup
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    model = args.target_model_name if hasattr(args, 'target_model_name') and args.target_model_name else os.getenv('MODEL_NAME_FOR_RUN', "google/gemini-flash-1.5")
+    model = args.target_model_name if hasattr(args, 'target_model_name') and args.target_model_name else os.getenv('MODEL_NAME_FOR_RUN', "google/gemini-2.5-flash-preview")
     max_str = args.target_max_results if hasattr(args, 'target_max_results') and args.target_max_results else os.getenv('MAX_RESULTS', "all")
     
     max_path = "all"
@@ -682,7 +683,7 @@ def run_wikispecies_verification_logic(args):
 def run_taxonomy_comparison_logic(args):
     # setup paths
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    model = args.target_model_name if hasattr(args, 'target_model_name') and args.target_model_name else os.getenv('MODEL_NAME_FOR_RUN', "google/gemini-flash-1.5")
+    model = args.target_model_name if hasattr(args, 'target_model_name') and args.target_model_name else os.getenv('MODEL_NAME_FOR_RUN', "google/gemini-2.5-flash-preview")
     max_str = args.target_max_results if hasattr(args, 'target_max_results') and args.target_max_results else os.getenv('MAX_RESULTS', "all")
 
     max_path = "all"

@@ -131,11 +131,11 @@ def setup_llm():
     load_dotenv()
     return {
         'cache': Cache(),
-        'model': "google/gemini-flash-1.5", 
+        'model': "google/gemini-2.5-flash-preview", 
         'api_rate_limiter': RateLimiter(rpm=30, ollama_mode=False),
-        'species_model': "google/gemini-flash-1.5", 
-        'threat_model': "google/gemini-flash-1.5",   
-        'impact_model': "google/gemini-flash-1.5",   
+        'species_model': "google/gemini-2.5-flash-preview", 
+        'threat_model': "google/gemini-2.5-flash-preview",   
+        'impact_model': "google/gemini-2.5-flash-preview",   
         'use_openrouter': True
     }
 

@@ -95,7 +95,7 @@ async def classify_abstract_relevance_ollama(title: str, abstract: str, llm_setu
         response = await llm_generate(
             prompt=prompt,
             system="You are an expert at classifying research abstracts for relevance to climate change impacts on wildlife.",
-            model=llm_setup.get('model', 'google/gemini-flash-1.5'),
+            model=llm_setup['model'],
             temp=0.1,
             llm_setup=llm_setup
         )
