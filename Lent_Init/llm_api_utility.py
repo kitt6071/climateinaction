@@ -53,7 +53,7 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
                 call_params["logprobs"] = True
                 if top_logprobs:
                     call_params["top_logprobs"] = top_logprobs
-                logger.info(f"Requesting logprobs=True, top_logprobs={top_logprobs} from OpenRouter for model {model}")
+                logger.debug(f"Requesting logprobs from OpenRouter for model {model}")
 
             logger.debug(f"API call params: {call_params}")
             
@@ -63,31 +63,22 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
                 lambda: client.chat.completions.create(**call_params)
             )
             
-            # Inspect response to ensure complete capture of the response
-            logger.info(f"OpenRouter API Response Details:")
-            logger.info(f"  Model: {response.model}")
-            logger.info(f"  Finish Reason: {response.choices[0].finish_reason}")
-            logger.info(f"  Response ID: {response.id}")
-            logger.info(f"  Usage: {response.usage}")
+            # Log only important response details
+            logger.debug(f"API Response: {response.model}, finish: {response.choices[0].finish_reason}, tokens: {response.usage.total_tokens}")
             
             # Check for problematic finish reasons
             if response.choices[0].finish_reason != "stop":
                 logger.warning(f"Non-normal finish reason: {response.choices[0].finish_reason}")
             
             content = response.choices[0].message.content
-            logger.debug(f"Response content length: {len(content) if content else 0}")
             
             # Return logprobs info if requested
             if logprobs:
                 if response.choices[0].logprobs:
-                    num_tokens = len(response.choices[0].logprobs.content) if response.choices[0].logprobs.content else 0
-                    logger.info(f"Received logprobs for {num_tokens} tokens from OpenRouter")
-                    logger.info(f"Logprobs available: {response.choices[0].logprobs is not None}")
-                    if response.choices[0].logprobs.content:
-                        logger.debug(f"First token logprob structure: {type(response.choices[0].logprobs.content[0])}")
+                    logger.debug(f"Received logprobs for {len(response.choices[0].logprobs.content) if response.choices[0].logprobs.content else 0} tokens")
                     return content, response.choices[0].logprobs
                 else:
-                    logger.warning(f"No logprobs received from OpenRouter despite requesting them")
+                    logger.debug(f"No logprobs received from OpenRouter")
                     logger.warning(f"Model: {model}, Finish reason: {response.choices[0].finish_reason}")
                     logger.warning(f"Response choice structure: {type(response.choices[0])}")
                     return content, None

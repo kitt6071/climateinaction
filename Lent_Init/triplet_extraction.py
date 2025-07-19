@@ -1038,11 +1038,11 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
             # Handle both single string and (content, logprobs) tuple returns
             if isinstance(response_result, tuple):
                 response_str, logprobs_info = response_result
-                logger.info(f"Received tuple response with logprobs for triplet: {subject}|{predicate}|{obj}")
+                logger.debug(f"Received response with logprobs for triplet: {subject}|{predicate}|{obj}")
             else:
                 response_str = response_result
                 logprobs_info = None
-                logger.warning(f"Received string-only response (no logprobs) for triplet: {subject}|{predicate}|{obj}")
+                logger.debug(f"Received response without logprobs for triplet: {subject}|{predicate}|{obj}")
             
             if not response_str:
                 return (subject, predicate, obj, doi_val), "ERROR_EMPTY_RESPONSE", 0.0
@@ -1059,7 +1059,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
             # Try to extract log probabilities for YES/NO tokens
             log_prob_confidence = None
             if logprobs_info and logprobs_info.content:
-                logger.info(f"Analyzing logprobs for {len(logprobs_info.content)} tokens in triplet: {subject}|{predicate}|{obj}")
+                logger.debug(f"Analyzing logprobs for {len(logprobs_info.content)} tokens")
                 yes_logprob = -float('inf')
                 no_logprob = -float('inf')
                 tokens_examined = 0
@@ -1080,50 +1080,49 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                                 yes_logprob = max(yes_logprob, top_token.logprob)
                                 yes_tokens_found.append((top_token.token, top_token.logprob))
                                 if top_token.logprob > old_yes:
-                                    logger.info(f"Found YES token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
+                                    logger.debug(f"Found YES token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
                             elif token_lower in ['no', '"no"', 'false']:
                                 old_no = no_logprob
                                 no_logprob = max(no_logprob, top_token.logprob)
                                 no_tokens_found.append((top_token.token, top_token.logprob))
                                 if top_token.logprob > old_no:
-                                    logger.info(f"Found NO token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
+                                    logger.debug(f"Found NO token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
                 
-                logger.info(f"Logprob analysis complete: examined {tokens_examined} tokens")
-                logger.info(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")
-                logger.info(f"NO tokens found: {len(no_tokens_found)} (best: {no_logprob:.4f})")
+                logger.debug(f"Logprob analysis complete: examined {tokens_examined} tokens")
+                logger.debug(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")
+                logger.debug(f"NO tokens found: {len(no_tokens_found)} (best: {no_logprob:.4f})")
                 
                 # Use log probability as confidence if found
                 if verification_decision.upper() == "YES" and yes_logprob > -float('inf'):
                     log_prob_confidence = yes_logprob
-                    logger.info(f"Using YES log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
+                    logger.debug(f"Using YES log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
                 elif verification_decision.upper() == "NO" and no_logprob > -float('inf'):
                     log_prob_confidence = no_logprob
-                    logger.info(f"Using NO log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
+                    logger.debug(f"Using NO log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
                 else:
-                    logger.warning(f"Could not find matching log probability for decision '{verification_decision}' (YES: {yes_logprob:.4f}, NO: {no_logprob:.4f})")
+                    logger.debug(f"Could not find matching log probability for decision '{verification_decision}'")
             else:
-                if logprobs_info is None:
-                    logger.warning(f"No logprobs_info available for triplet: {subject}|{predicate}|{obj}")
-                elif not logprobs_info.content:
-                    logger.warning(f"logprobs_info.content is empty for triplet: {subject}|{predicate}|{obj}")
-                else:
-                    logger.warning(f"Unexpected logprobs_info structure for triplet: {subject}|{predicate}|{obj}")
+                logger.debug(f"No usable logprobs available")
             
-            # Fall back to JSON confidence if no logprob found or if any erorrs happen
+            # Fall back to JSON confidence if no logprob found or if any errors happen
             if log_prob_confidence is None:
                 confidence_score = result_json.get("confidence", 0.0)
                 if isinstance(confidence_score, (float, int)):
                     log_prob_confidence = confidence_score
-                    logger.warning(f"Falling back to JSON confidence: {log_prob_confidence:.4f} for triplet: {subject}|{predicate}|{obj}")
+                    logger.debug(f"Falling back to JSON confidence: {log_prob_confidence:.4f}")
                 else:
                     log_prob_confidence = 0.0
-                    logger.error(f"Invalid JSON confidence, using 0.0 for triplet: {subject}|{predicate}|{obj}")
+                    logger.debug(f"Invalid JSON confidence, using 0.0")
             else:
                 logger.info(f"Successfully extracted log probability confidence: {log_prob_confidence:.4f}")
 
             if isinstance(verification_decision, str):
-                logger.info(f"Returning verification result: decision='{verification_decision.upper()}', confidence={log_prob_confidence:.4f}")
-                return (subject, predicate, obj, doi_val), verification_decision.upper(), log_prob_confidence
+                decision = verification_decision.upper()
+                if decision == "YES":
+                    logger.info(f"ACCEPT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f})")
+                else:
+                    logger.info(f"REJECT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f})")
+                return (subject, predicate, obj, doi_val), decision, log_prob_confidence
             else:
                 logger.error(f"Invalid verification decision type: {type(verification_decision)} for triplet: {subject}|{predicate}|{obj}")
                 return (subject, predicate, obj, doi_val), "ERROR_INVALID_JSON_CONTENT", 0.0
@@ -1143,7 +1142,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
 
     logger.info(f"Starting verification of {len(tasks)} triplets using meta-llama/llama-3.3-70b-instruct with log probability analysis...")
     verification_results = await asyncio.gather(*tasks, return_exceptions=True)
-    logger.info(f"Llama verification batch complete - processing results...")
+    logger.debug(f"Llama verification batch complete - processing results...")
 
     for i, res_tuple_or_exc in enumerate(verification_results):
         original_triplet = triplet_list[i]
@@ -1188,7 +1187,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                 logger.warning(f"REJECTED (low confidence): {subject} | {predicate} | {obj} ({conf_type}: {confidence:.3f})")
         else:
             counts['verified_no'] += 1
-            logger.warning(f"rejected: {subject} | {predicate} | {obj} (decision: {decision})")
+            logger.info(f"REJECTED: {subject} | {predicate} | {obj} (decision: {decision})")
 
     try:
         with open(cache_file_path, 'wb') as f:

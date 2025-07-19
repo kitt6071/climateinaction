@@ -133,17 +133,92 @@ async def run_main_pipeline_logic(args):
     logger.info(f"Starting data load from parquet (batch: {batch_size}, max: {max_limit if max_limit != float('inf') else 'all'}, chunk: {BATCH_CONFIG['processing_batch_size']})")
     irrelevant_file = results_path / "irrelevant_abstracts.jsonl"
 
+    shorebird_keywords = [
+    # Core Shorebird Terms
+    'shorebird', 'shore bird', 'wader', 'wading bird',
+
+    # Major Shorebird Families (Common Names)
+    'sandpiper', 'plover', 'godwit', 'curlew', 'turnstone', 'oystercatcher',
+    'avocet', 'stilt', 'phalarope', 'snipe', 'woodcock', 'jacana', # Though Jacanas are sometimes grouped, they're distinct
+    'thick-knee', # Often associated with waders
+    'pratincole', 'courser', # Sometimes grouped with plovers/waders
+
+    # Specific Genera (Scientific Names - often useful for more precise searching)
+    'Calidris',      # Sandpipers (e.g., Dunlin, Sanderling, Knot, Stints)
+    'Tringa',        # Yellowlegs, Tattlers, Godwits (some species)
+    'Charadrius',    # Plovers (e.g., Ringed Plover, Kentish Plover, Snowy Plover)
+    'Pluvialis',     # Golden Plovers, Grey Plover
+    'Numenius',      # Curlews, Whimbrel
+    'Limosa',        # Godwits
+    'Arenaria',      # Turnstones
+    'Haematopus',    # Oystercatchers
+    'Recurvirostra', # Avocets
+    'Himantopus',    # Stilts
+    'Phalaropus',    # Phalaropes
+    'Gallinago',     # Snipes
+    'Scolopax',      # Woodcocks
+    'Actitis',       # Sandpipers (e.g., Common Sandpiper, Spotted Sandpiper)
+    'Limnodromus',   # Dowitchers
+    'Aphriza',       # Surfbird
+    'Heteroscelus',  # Wandering Tattler, Grey-tailed Tattler
+    'Xenus',         # Terek Sandpiper
+    'Prosobonia',    # Polynesian Sandpipers (extinct/endangered)
+
+    # Specific Species (Common Names - a good selection of diverse types)
+    'sanderling', 'dunlin', 'knot', 'stint', 'little stint', 'temminck\'s stint',
+    'semipalmated sandpiper', 'western sandpiper', 'least sandpiper',
+    'peep', # Collective term for small Calidris sandpipers
+    'yellowlegs', 'greater yellowlegs', 'lesser yellowlegs',
+    'dowitcher', 'long-billed dowitcher', 'short-billed dowitcher',
+    'common snipe', 'jack snipe', 'great snipe',
+    'eurasian curlew', 'whimbrel', 'bristle-thighed curlew',
+    'bar-tailed godwit', 'black-tailed godwit', 'marbled godwit', 'hudsonian godwit',
+    'red knot', 'great knot',
+    'ruddy turnstone', 'black turnstone',
+    'common ringed plover', 'kentish plover', 'snowy plover', 'piping plover',
+    'killdeer', 'dotterel', 'mountain plover', 'pacific golden plover', 'european golden plover',
+    'grey plover', 'black-bellied plover',
+    'eurasian oystercatcher', 'american oystercatcher', 'black oystercatcher',
+    'pied avocet', 'american avocet',
+    'black-necked stilt', 'pied stilt',
+    'red-necked phalarope', 'grey phalarope', 'wilson\'s phalarope',
+    'common sandpiper', 'spotted sandpiper',
+    'wood sandpiper', 'green sandpiper', 'marsh sandpiper',
+    'greenshank', 'redshank', 'spotted redshank',
+    'terek sandpiper', 'surfbird', 'wandering tattler', 'grey-tailed tattler',
+    'stone-curlew', 'eurasian thick-knee',
+    'cream-colored courser', 'collared pratincole',
+
+    # Unique Characteristics/Behaviors
+    'long-legged', 'long-billed', 'short-billed', 'upturned bill', 'downcurved bill'
+]
+
+    def has_shorebird_keywords(text):
+        text_lower = text.lower()
+        return any(keyword in text_lower for keyword in shorebird_keywords)
+
     async def check_relevance(title, abstract, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
         # try embedding classifier first
         if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
             logger.debug(f"Using embedding classifier for '{title[:30]}...'")
-            return predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.30)
+            is_relevant = predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.30)
+            # Get the actual probability score for logging
+            probabilities = embed_classifier.predict_proba(embed_model.encode([abstract]))[0]
+            relevance_score = probabilities[1]
+            return is_relevant, relevance_score
         elif legacy_classifier and vectorizer:
             logger.debug(f"Using TF-IDF for '{title[:30]}...'")
-            return predict_relevance_local(abstract, vectorizer, legacy_classifier)
+            is_relevant = predict_relevance_local(abstract, vectorizer, legacy_classifier)
+            # Get the actual probability score for logging
+            vec_text = vectorizer.transform([abstract])
+            probabilities = legacy_classifier.predict_proba(vec_text)[0]
+            relevance_score = probabilities[1]
+            return is_relevant, relevance_score
         # fallback to LLM
         logger.debug(f"Using LLM for '{title[:30]}...'")
-        return await classify_abstract_relevance_ollama(title, abstract, llm_setup)
+        is_relevant = await classify_abstract_relevance_ollama(title, abstract, llm_setup)
+        relevance_score = 1.0 if is_relevant else 0.0
+        return is_relevant, relevance_score
 
     while True:
         if processed_count >= max_limit:
@@ -198,10 +273,10 @@ async def run_main_pipeline_logic(args):
             results = await asyncio.gather(*tasks)
             logger.info("Relevance check done")
 
-            for i, is_relevant in enumerate(results):
+            for i, (is_relevant, relevance_score) in enumerate(results):
                 if is_relevant:
                     relevant_item = batch_items[i]
-                    logger.info(f"RELEVANT #{processed_count + 1}: '{relevant_item['title']}'")
+                    logger.info(f"RELEVANT #{processed_count + 1} (score: {relevance_score:.3f}): '{relevant_item['title']}'")
                     chunk.append(relevant_item)
                     processed_count += 1 
 
@@ -228,9 +303,19 @@ async def run_main_pipeline_logic(args):
                         logger.info(f"Hit limit in inner loop ({max_limit})")
                         break 
                 else:
+                    # Log irrelevant abstracts with reason
+                    item = batch_items[i]
+                    has_keywords = has_shorebird_keywords(f"{item['title']} {item['abstract']}")
                     with open(irrelevant_file, 'a', encoding='utf-8') as f:
                         import json
-                        f.write(json.dumps({"title": batch_items[i]['title'], "abstract": batch_items[i]['abstract'], "doi": batch_items[i]['doi']}) + '\n')
+                        f.write(json.dumps({
+                            "title": item['title'], 
+                            "abstract": item['abstract'], 
+                            "doi": item['doi'],
+                            "relevance_score": float(relevance_score),
+                            "has_shorebird_keywords": has_keywords,
+                            "rejection_reason": "low_relevance_no_keywords" if not has_keywords else "low_relevance_with_keywords"
+                        }) + '\n')
         
         if processed_count >= max_limit:
             logger.info(f"Hit limit in outer loop ({max_limit})")
