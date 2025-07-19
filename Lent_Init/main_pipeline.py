@@ -126,10 +126,20 @@ async def run_main_pipeline_logic(args):
     
     chunk = []
     
-    batch_size = 1000 
+    batch_size = 1000
     skip_rows = 0
     processed_count = 0 
     total_scanned = 0
+
+    if max_limit != float('inf'):
+        if max_limit <= 50:
+            batch_size = min(1000, max_limit * 20)
+        elif max_limit <= 1000:
+            batch_size = min(5000, max_limit * 10)
+        else:
+            batch_size = min(50000, max_limit * 5)
+    else:
+        batch_size = 10000
 
     logger.info(f"Starting data load from parquet (batch: {batch_size}, max: {max_limit if max_limit != float('inf') else 'all'}, chunk: {BATCH_CONFIG['processing_batch_size']})")
     irrelevant_file = results_path / "irrelevant_abstracts.jsonl"
@@ -196,7 +206,53 @@ async def run_main_pipeline_logic(args):
 
     def has_shorebird_keywords(text):
         text_lower = text.lower()
-        return any(keyword in text_lower for keyword in shorebird_keywords)
+        
+        # Quick exclusions for obvious false positives
+        if any(exclude in text_lower for exclude in [
+            'root-knot', 'root knot', 'nematode', 'nematodos', 'plover cove', 
+            'reservoir', 'virtual client', 'ceramic sherd',
+            'escurrimiento', 'sedimentos', 'comunidades de a',
+            'haematococcus pluvialis'  # algae species
+        ]):
+            return False
+            
+        # Use word boundaries for broad terms to avoid partial matches
+        import re
+        
+        # Check for specific scientific names first (these are safer)
+        scientific_genera = [
+            'calidris', 'tringa', 'charadrius', 'pluvialis', 'numenius', 
+            'limosa', 'arenaria', 'haematopus', 'recurvirostra', 'himantopus',
+            'phalaropus', 'gallinago', 'scolopax', 'actitis', 'limnodromus'
+        ]
+        
+        for genus in scientific_genera:
+            if re.search(r'\b' + genus + r'\b', text_lower):
+                return True
+        
+        # Check for specific shorebird terms with word boundaries
+        specific_terms = [
+            'shorebird', 'shore bird', 'wader', 'wading bird',
+            'sandpiper', 'oystercatcher', 'godwit', 'curlew', 'turnstone',
+            'avocet', 'stilt', 'phalarope', 'snipe', 'woodcock',
+            'yellowlegs', 'dowitcher', 'sanderling', 'dunlin',
+            'killdeer', 'whimbrel', 'greenshank', 'redshank'
+        ]
+        
+        for term in specific_terms:
+            if re.search(r'\b' + term + r'\b', text_lower):
+                return True
+        
+        # Check for 'plover' but exclude place names
+        if re.search(r'\b(plover|plovers)\b', text_lower):
+            if not re.search(r'(plover cove|plover lake|plover point|plover bay)', text_lower):
+                return True
+        
+        # Check for 'knot' but exclude plant/nematode contexts  
+        if re.search(r'\b(red knot|great knot|knot sandpiper)\b', text_lower):
+            return True
+        
+        return False
 
     async def check_relevance(title, abstract, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
         # try embedding classifier first
@@ -294,9 +350,7 @@ async def run_main_pipeline_logic(args):
                     chunk.append(relevant_item)
                     processed_count += 1 
 
-                    if len(chunk) >= BATCH_CONFIG['processing_batch_size'] or \
-                       processed_count >= max_limit:
-                        
+                    if len(chunk) >= BATCH_CONFIG['processing_batch_size'] or processed_count >= max_limit:
                         logger.info(f"Processing chunk of {len(chunk)} abstracts (total so far: {processed_count})")
                         
                         chunk_triplets, chunk_taxo = await process_abstract_chunk(
@@ -304,32 +358,153 @@ async def run_main_pipeline_logic(args):
                             llm_setup, 
                             refinement_cache
                         )
-                        logger.info(f"Got {len(chunk_triplets)} triplets, {len(chunk_taxo)} taxonomy entries")
+                        logger.info(f"Got {len(chunk_triplets)} triplets, {len(chunk_taxo)} taxonomy entries")                        
+                        should_backfill = (processed_count >= max_limit)
                         
-                        norm_triplets.extend(chunk_triplets)
-                        taxo_map.update(chunk_taxo) 
-                        all_data.extend(chunk)
-                        logger.info(f"Total: {len(norm_triplets)} triplets, {len(taxo_map)} taxonomy entries")
+                        if should_backfill:
+                            logger.info("Target reached - triggering backfill optimization")                            
+                            target_successful_abstracts = len(chunk)
+                            successful_abstracts = []
+                            failed_abstracts = []
+                            
+                            triplets_by_doi = {}
+                            for triplet in chunk_triplets:
+                                doi = triplet[3]
+                                if doi not in triplets_by_doi:
+                                    triplets_by_doi[doi] = []
+                                triplets_by_doi[doi].append(triplet)
+                            
+                            for abstract in chunk:
+                                doi = abstract['doi']
+                                if doi in triplets_by_doi and len(triplets_by_doi[doi]) > 0:
+                                    successful_abstracts.append(abstract)
+                                    logger.info(f"SUCCESS: {doi} produced {len(triplets_by_doi[doi])} triplets")
+                                else:
+                                    failed_abstracts.append(abstract)
+                                    logger.info(f"FAILED: {doi} produced 0 triplets")
+                            
+                            logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
+                            
+                            backfill_attempts = 0
+                            max_backfill_attempts = 5
+                            
+                            while len(successful_abstracts) < target_successful_abstracts and backfill_attempts < max_backfill_attempts:
+                                remaining_relevant = []
+                                processed_dois = {abs_data['doi'] for abs_data in chunk}
+                                
+                                for i, (is_relevant, relevance_score) in enumerate(results):
+                                    if is_relevant and batch_items[i]['doi'] not in processed_dois:
+                                        remaining_relevant.append(batch_items[i])
+                                
+                                if not remaining_relevant:
+                                    logger.info(f"Current batch exhausted, scanning for more abstracts (attempt {backfill_attempts + 1})")
+                                    
+                                    backfill_df = load_data_with_offset("shorebirds.parquet", skip_rows, batch_size)
+                                    if len(backfill_df) == 0:
+                                        logger.info("No more data available for backfill")
+                                        break
+                                    
+                                    backfill_items = []
+                                    for i, row_data in enumerate(backfill_df.iter_rows(named=True)):
+                                        abstract_text = row_data["abstract"]
+                                        title_text = row_data["title"]
+                                        doi_text = row_data.get("doi")
+                                        if not doi_text: continue
+                                        backfill_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
+                                    
+                                    if backfill_items:
+                                        backfill_tasks = []
+                                        for item in backfill_items:
+                                            backfill_tasks.append(
+                                                check_relevance(item['title'], item['abstract'], llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+                                            )
+                                        
+                                        backfill_results = await asyncio.gather(*backfill_tasks)
+                                        
+                                        for i, (is_relevant, relevance_score) in enumerate(backfill_results):
+                                            if is_relevant:
+                                                remaining_relevant.append(backfill_items[i])
+                                    
+                                    skip_rows += len(backfill_df)
+                                    total_scanned += len(backfill_df)
+                                
+                                if not remaining_relevant:
+                                    logger.info(f"No more relevant abstracts available for replacement (attempt {backfill_attempts + 1})")
+                                    break
+                                
+                                needed_replacements = target_successful_abstracts - len(successful_abstracts)
+                                replacement_count = min(len(remaining_relevant), needed_replacements * 2)
+                                replacement_abstracts = remaining_relevant[:replacement_count]
+                                
+                                backfill_attempts += 1
+                                logger.info(f"Backfill attempt #{backfill_attempts}: Need {needed_replacements} successful abstracts, trying {len(replacement_abstracts)} replacements")
 
-                        chunk = [] # reset
-                    
-                    if processed_count >= max_limit:
-                        logger.info(f"Hit limit in inner loop ({max_limit})")
-                        break 
-                else:
-                    # Log irrelevant abstracts with reason
-                    item = batch_items[i]
-                    has_keywords = has_shorebird_keywords(f"{item['title']} {item['abstract']}")
-                    with open(irrelevant_file, 'a', encoding='utf-8') as f:
-                        import json
-                        f.write(json.dumps({
-                            "title": item['title'], 
-                            "abstract": item['abstract'], 
-                            "doi": item['doi'],
-                            "relevance_score": float(relevance_score),
-                            "has_shorebird_keywords": has_keywords,
-                            "rejection_reason": "low_relevance_no_keywords" if not has_keywords else "low_relevance_with_keywords"
-                        }) + '\n')
+                                replacement_triplets, replacement_taxo = await process_abstract_chunk(
+                                    replacement_abstracts,
+                                    llm_setup,
+                                    refinement_cache
+                                )
+                                
+                                replacement_triplets_by_doi = {}
+                                for triplet in replacement_triplets:
+                                    doi = triplet[3]
+                                    if doi not in replacement_triplets_by_doi:
+                                        replacement_triplets_by_doi[doi] = []
+                                    replacement_triplets_by_doi[doi].append(triplet)
+                                
+                                new_successes = 0
+                                for abstract in replacement_abstracts:
+                                    doi = abstract['doi']
+                                    if doi in replacement_triplets_by_doi and len(replacement_triplets_by_doi[doi]) > 0:
+                                        successful_abstracts.append(abstract)
+                                        new_successes += 1
+                                        logger.info(f"REPLACEMENT SUCCESS: {doi} produced {len(replacement_triplets_by_doi[doi])} triplets")
+                                    else:
+                                        failed_abstracts.append(abstract)
+                                        logger.info(f"REPLACEMENT FAILED: {doi} produced 0 triplets")
+                                
+                                chunk_triplets.extend(replacement_triplets)
+                                chunk_taxo.update(replacement_taxo)
+                                chunk.extend(replacement_abstracts)
+                                
+                                logger.info(f"Backfill #{backfill_attempts}: Got {new_successes} new successful abstracts, total successful: {len(successful_abstracts)}")
+                            
+                            final_successful = len(successful_abstracts)
+                            final_failed = len(failed_abstracts)
+                            final_triplets = len(chunk_triplets)
+                            
+                            logger.info(f"FINAL RESULT: {final_successful} successful abstracts, {final_failed} failed abstracts, {final_triplets} total triplets")
+                            
+                            norm_triplets.extend(chunk_triplets)
+                            taxo_map.update(chunk_taxo) 
+                            all_data.extend(chunk)
+                            logger.info(f"Total: {len(norm_triplets)} triplets, {len(taxo_map)} taxonomy entries")
+
+                            chunk = []
+                        else:
+                            logger.info(f"Regular chunk processed: {len(chunk_triplets)} triplets from {len(chunk)} abstracts")
+                            norm_triplets.extend(chunk_triplets)
+                            taxo_map.update(chunk_taxo)
+                            all_data.extend(chunk)
+                            logger.info(f"Total so far: {len(norm_triplets)} triplets, {len(taxo_map)} taxonomy entries")
+                            chunk = []
+                        
+                        if processed_count >= max_limit:
+                            logger.info(f"Hit limit in inner loop ({max_limit})")
+                            break 
+                    else:
+                        item = batch_items[i]
+                        has_keywords = has_shorebird_keywords(f"{item['title']} {item['abstract']}")
+                        with open(irrelevant_file, 'a', encoding='utf-8') as f:
+                            import json
+                            f.write(json.dumps({
+                                "title": item['title'], 
+                                "abstract": item['abstract'], 
+                                "doi": item['doi'],
+                                "relevance_score": float(relevance_score),
+                                "has_shorebird_keywords": has_keywords,
+                                "rejection_reason": "low_relevance_no_keywords" if not has_keywords else "low_relevance_with_keywords"
+                            }) + '\n')
         
         if processed_count >= max_limit:
             logger.info(f"Hit limit in outer loop ({max_limit})")

@@ -72,7 +72,8 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
 
 # Extract entities (species & threats) from abstract in single call
 async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Optional[Dict[str, List[str]]]:
-    logger.info(f"P2.1: Extracting entities for abstract starting: {abstract_text[:50]}...")
+    model_name = llm_setup.get("model", "unknown")
+    logger.info(f"P2.1: Extracting entities using model {model_name} for abstract: {abstract_text[:50]}...")
     
     entity_extraction_schema = {
         "type": "object",
@@ -86,15 +87,17 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
                 "type": "array", 
                 "items": {"type": "string"},
                 "description": "List of distinct threat phrases or negative impacts"
+            },
+            "reason": {
+                "type": "string",
+                "description": "Brief explanation of your reasoning for the species and threats identified"
             }
         },
-        "required": ["species", "threats"]
+        "required": ["species", "threats", "reason"]
     }
     
     original_species_system_prompt = """
-        Extract all specific species or taxonomic groups mentioned in the text.
-        Only select species that are victims of threats mentioned in this abstract and strictly follow the rules below.
-
+        Extract specific species or taxonomic groups mentioned in the text.
         Rules:
         1. Only include species or taxonomic groups that are DIRECTLY mentioned in the text
         2. Keep scientific names exactly as written
@@ -105,12 +108,15 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
         7. Assign a confidence level (high, medium, low) based on how clearly the species is mentioned
         """
     
-    # Maybe too many examples, should relook at rule number or system/user prompt to see if it can be simplified
     general_threat_extraction_rules = """
-        Based on the abstract, identify all distinct phrases describing specific NEGATIVE threats, stressors, or CAUSES OF HARM.
-        Read the entire abstract to identify the most impactful threat to the ENTIRETY of this species. Only select a threat if it impacts the species as a whole. 
-        Find threats from observation not just lab experimentation with things like diets and confinement.
-        **Key Principle: A threat is the fundamental CAUSE or DRIVER of harm, not the symptom or consequence of that harm.**
+        Extract NEGATIVE threats, stressors, or harm causes.
+        Include:
+        - Environmental stressors (climate, temperature, weather)
+        - Habitat issues (loss, degradation, fragmentation)
+        - Human activities (development, pollution, disturbance)
+        - Biological factors (predation, disease, competition)
+        - Resource limitations (food scarcity, nest sites)
+        
         Strictly follow the rules below:
         **Rules for Threat Extraction:**
         1. Focus ONLY on factors that CAUSE HARM or NEGATIVELY impact species generally described in the abstract. The threat should be the *origin* of the negative effect.
@@ -136,23 +142,6 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
             *   **Incorrect Threat Identification:** "impairs avian health" (This is a consequence/effect)
             *   **Correct Threat Identification:** "mercury (Hg) exposure" (This is the cause)
 
-        *   **Context:** "Passerine show altered food distribution patterns characterized by parental preference for senior offspring under food limitation, potentially affecting the survival and development of junior offspring."
-            *   **Correct Threat Identification:** "food limitation" (This is the cause of altered patterns)
-
-        *   **Context:** "The species has a low reproductive rate and small population, making it vulnerable to stochastic events."
-            *   **Incorrect Threat Identification:** "low reproductive rate", "small population" (These are intrinsic states)
-            *   **Correct Threat Identification:** "stochastic events" (This is the external threat to which the species is vulnerable)
-
-        *   **Context:** "Nesting success for the Seaside Sparrow was high, likely due to a lack of predation in the protected marsh."
-            *   **Incorrect Threat Identification:** "lack of predation" or "scarcity of predators" (This is a beneficial condition, the *absence* of a threat).
-            *   **Correct Action:** This phrase should not be identified as a threat.
-
-        *   **Context:** "The primary cause of nest failure was brood reduction, where the youngest chick did not survive."
-            *   **Incorrect Threat Identification:** "brood reduction" (This is the impact/symptom).
-            *   **Correct Action:** The underlying cause for the reduction should be identified. If one isn't mentioned, this is not a valid threat to extract.
-
-        *   **Context:** "Northern Bobwhite experiences unreliable population density estimation due to violated assumptions..."
-            *   **Note:** While "violated assumptions" leads to a problem (unreliable estimation), it's a methodological issue, not a direct environmental threat to the species' survival or well-being in the same way as predation or habitat loss. Only extract direct threats to the organism or its environment. If the text described how inaccurate estimates *led to* mismanagement causing harm, then that mismanagement could be a threat. Here, the problem is with the *estimation method itself*.
         """
     combined_system_prompt = f"""You are a scientific entity extraction expert. Perform the following two tasks based on the provided abstract:
 
@@ -167,6 +156,10 @@ TASK 2: THREAT EXTRACTION (General from Abstract)
 {general_threat_extraction_rules}
 ---
 List these general threat descriptions under the "threats" key in your JSON output (as a list of strings).
+
+TASK 3: REASONING
+---
+Provide a brief explanation of your reasoning for the species and threats you identified in the "reason" field. Explain why you selected these specific entities and how they relate to the abstract's content.
 
 Provide your complete output *only* as a single valid JSON object matching this schema:
 {json.dumps(entity_extraction_schema)}
@@ -185,7 +178,9 @@ Do not include any other explanatory text or markdown around the JSON object.
         )
         
         if not response_str:
-            logger.error(f"P2.1: LLM returned empty response for entity extraction")
+            model_name = llm_setup.get("model", "unknown")
+            logger.error(f"P2.1: LLM ({model_name}) returned empty response for entity extraction")
+            logger.error(f"P2.1: Abstract length: {len(abstract_text)} chars, Preview: {abstract_text[:50]}...")
             return None
             
         entities_data = json.loads(response_str)
@@ -195,7 +190,9 @@ Do not include any other explanatory text or markdown around the JSON object.
            isinstance(entities_data.get("threats"), list):
             if all(isinstance(s, str) for s in entities_data.get("species")) and \
                all(isinstance(t, str) for t in entities_data.get("threats")):
+                reason = entities_data.get("reason", "No reasoning provided")
                 logger.info(f"P2.1: Successfully extracted {len(entities_data['species'])} species and {len(entities_data['threats'])} threats.")
+                logger.info(f"P2.1: Reasoning: {reason}")
                 return entities_data
             else:
                 logger.error(f"P2.1: Extracted lists contain non-string elements")
@@ -206,7 +203,9 @@ Do not include any other explanatory text or markdown around the JSON object.
                isinstance(actual_data.get("threats"), list) and \
                all(isinstance(s, str) for s in actual_data.get("species")) and \
                all(isinstance(t, str) for t in actual_data.get("threats")):
+                reason = actual_data.get("reason", "No reasoning provided")
                 logger.info(f"P2.1: Successfully extracted {len(actual_data['species'])} species and {len(actual_data['threats'])} threats (from 'value' key).")
+                logger.info(f"P2.1: Reasoning: {reason}")
                 return actual_data
             else:
                 logger.error(f"P2.1: Unexpected structure in 'value' key")
@@ -224,7 +223,8 @@ Do not include any other explanatory text or markdown around the JSON object.
 
 #Impact relationship extraction
 async def generate_relationships_concurrently(abstract_text: str, species_list: List[str], threats_list: List[str], llm_setup, doi: str) -> List[Tuple[str, str, str, str]]:
-    logger.info(f"P2.2: Generating relationships for DOI: {doi}, {len(species_list)} species, {len(threats_list)} threats")
+    model_name = llm_setup.get("model", "unknown")
+    logger.info(f"P2.2: Generating relationships using model {model_name} for DOI: {doi}, {len(species_list)} species, {len(threats_list)} threats")
     
     if not species_list or not threats_list:
         logger.warning(f"P2.2: Missing species or threats list for DOI {doi}. Skipping relationship generation.")
@@ -237,9 +237,10 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
             "properties": {
                 "subject": {"type": "string", "description": "Species name from provided list"},
                 "predicate": {"type": "string", "description": "Relationship/impact mechanism linking subject and object"},
-                "object": {"type": "string", "description": "Threat description from provided list"}
+                "object": {"type": "string", "description": "Threat description from provided list"},
+                "reason": {"type": "string", "description": "Brief explanation of why this relationship exists based on the abstract"}
             },
-            "required": ["subject", "predicate", "object"]
+            "required": ["subject", "predicate", "object", "reason"]
         }
     }
     system_prompt = (
@@ -248,7 +249,7 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
             1. An Abstract (the source text).
             2. A Subject (a specific species name from the abstract).
             3. An Object (a specific threat phrase from the abstract, which is understood to be the CAUSE of harm).
-            The relationship should describe only species-wide effects from the threat. Read the entire abstract to get additional context when establishing the relationship between the species and threats. 
+            Read the entire abstract to get additional context when establishing the relationship between the species and threats. 
             Do not be vague or redundant and ensure the relation is a FULL PHRASE, and follow these rules strictly:
 
             **CRITICAL PREDICATE RULES:**
@@ -282,25 +283,10 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
                 *   **Your Generated Predicate:** \"experience impaired avian health due to\"
                 *   *(Resulting Triplet: Songbird experience impaired avian health due to mercury (Hg) exposure)*
 
-            4.  **Abstract Snippet:** \"Passerine show altered food distribution patterns characterized by parental preference for senior offspring under food limitation, potentially affecting the survival and development of junior offspring.\"
-                *   **Given Subject:** Passerine
-                *   **Given Object (Threat):** food limitation
-                *   **Your Generated Predicate:** \"show altered food distribution patterns characterized by parental preference for senior offspring under\"
-                *   *(Resulting Triplet: Passerine show altered food distribution patterns... under food limitation)*
-
-            5.  **Abstract Snippet:** \"Bird suffers mortality from direct strikes with and experiences population decline due to illegal spring killing.\"
-                *   **Given Subject:** Bird
-                *   **Given Object (Threat):** illegal spring killing
-                *   **Your Generated Predicate:** \"suffers mortality from direct strikes with and experiences population decline due to\"
-                *   *(Resulting Triplet: Bird suffers mortality... due to illegal spring killing)*
-
-            6.  **Abstract Snippet:** "Early successional bird species are declining in landscapes where disturbances are suppressed."
-                *   **Given Subject:** Early Successional Bird
-                *   **Given Object (Threat):** suppressed disturbances
-                *   **Correct Predicate:** "are experiencing decline in landscapes where"
-                *   **Incorrect Predicate:** "are"
-
-            Provide ONLY the predicate string as your output. Do not include 'Predicate:' or any other explanatory text."""
+            For each relationship triplet, provide:
+            - predicate: The relationship/impact mechanism  
+            - reason: Brief explanation of why this relationship exists based on the abstract text
+            Output as a JSON array of objects. Do not include any explanatory text outside the JSON."""
         )
     user_prompt = f"""Abstract:
                     {abstract_text}
@@ -325,7 +311,10 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
         )
         
         if not response_str:
-            logger.error(f"P2.2: LLM returned empty response for relationship generation. DOI: {doi}")
+            model_name = llm_setup.get("model", "unknown")
+            logger.error(f"P2.2: LLM ({model_name}) returned empty response for relationship generation. DOI: {doi}")
+            logger.error(f"P2.2: Species: {species_list}, Threats: {threats_list}")
+            logger.error(f"P2.2: Abstract length: {len(abstract_text)} chars")
             return []
             
         relationships_data = json.loads(response_str)
@@ -336,9 +325,12 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
                     subject = rel.get("subject")
                     predicate = rel.get("predicate")
                     obj_threat = rel.get("object")
+                    reason = rel.get("reason")
                     if subject and predicate and obj_threat and subject in species_list and obj_threat in threats_list:
                         if len(predicate.split()) > 1:
                             raw_triplets.append((subject, predicate, obj_threat, doi))
+                            if reason:
+                                logger.info(f"P2.2: Triplet reasoning - {subject} | {predicate} | {obj_threat}: REASONING: {reason}")
                         else:
                             logger.warning(f"P2.2: Dropping invalid triplet (short predicate): {rel}. DOI: {doi}")
                     else:
@@ -355,9 +347,12 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
                     subject = rel.get("subject")
                     predicate = rel.get("predicate")
                     obj_threat = rel.get("object")
+                    reason = rel.get("reason")
                     if subject and predicate and obj_threat and subject in species_list and obj_threat in threats_list:
                         if len(predicate.split()) > 1:
                             raw_triplets.append((subject, predicate, obj_threat, doi))
+                            if reason:
+                                logger.info(f"P2.2: Triplet reasoning - {subject} | {predicate} | {obj_threat}: REASONING: {reason}")
                         else:
                             logger.warning(f"P2.2: Dropping invalid triplet from 'value' list (short predicate): {rel}. DOI: {doi}")
                     else:
