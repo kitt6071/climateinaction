@@ -202,7 +202,7 @@ async def run_main_pipeline_logic(args):
         # try embedding classifier first
         if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
             logger.debug(f"Using embedding classifier for '{title[:30]}...'")
-            is_relevant = predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.30)
+            is_relevant = predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.70)
             # Get the actual probability score for logging
             probabilities = embed_classifier.predict_proba(embed_model.encode([abstract]))[0]
             relevance_score = probabilities[1]
