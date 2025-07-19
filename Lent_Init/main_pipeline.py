@@ -206,6 +206,10 @@ async def run_main_pipeline_logic(args):
             # Get the actual probability score for logging
             probabilities = embed_classifier.predict_proba(embed_model.encode([abstract]))[0]
             relevance_score = probabilities[1]
+            if not is_relevant and has_shorebird_keywords(f"{title} {abstract}"):
+                logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{title[:50]}...'")
+                return True, relevance_score  # override decision to True
+
             return is_relevant, relevance_score
         elif legacy_classifier and vectorizer:
             logger.debug(f"Using TF-IDF for '{title[:30]}...'")
@@ -214,11 +218,20 @@ async def run_main_pipeline_logic(args):
             vec_text = vectorizer.transform([abstract])
             probabilities = legacy_classifier.predict_proba(vec_text)[0]
             relevance_score = probabilities[1]
+            if not is_relevant and has_shorebird_keywords(f"{title} {abstract}"):
+                logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{title[:50]}...'")
+                return True, relevance_score  # override decision to True
+
             return is_relevant, relevance_score
         # fallback to LLM
         logger.debug(f"Using LLM for '{title[:30]}...'")
         is_relevant = await classify_abstract_relevance_ollama(title, abstract, llm_setup)
         relevance_score = 1.0 if is_relevant else 0.0
+
+        if not is_relevant and has_shorebird_keywords(f"{title} {abstract}"):
+            logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{title[:50]}...'")
+            return True, relevance_score  # override decision to True
+
         return is_relevant, relevance_score
 
     while True:
