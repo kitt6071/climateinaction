@@ -135,9 +135,9 @@ async def run_main_pipeline_logic(args):
         if max_limit <= 50:
             batch_size = min(1000, max_limit * 20)
         elif max_limit <= 1000:
-            batch_size = min(5000, max_limit * 10)
+            batch_size = min(5000, max_limit * 5)
         else:
-            batch_size = min(50000, max_limit * 5)
+            batch_size = min(50000, max_limit * 2)
     else:
         batch_size = 10000
 
