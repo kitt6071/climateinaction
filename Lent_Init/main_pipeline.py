@@ -66,6 +66,8 @@ async def run_main_pipeline_logic(args):
 
     llm_setup = llm_sys
     llm_setup['model'] = model_name
+    llm_setup['species_model'] = model_name  
+    llm_setup['threat_model'] = model_name
 
     try:
         nltk.download('punkt', quiet=True)

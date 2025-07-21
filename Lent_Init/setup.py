@@ -131,11 +131,11 @@ def setup_llm():
     load_dotenv()
     return {
         'cache': Cache(),
-        'model': "google/gemini-2.5-flash-preview", 
+        'model': "moonshotai/kimi-k2",
         'api_rate_limiter': RateLimiter(rpm=30, ollama_mode=False),
-        'species_model': "google/gemini-2.5-flash-preview", 
-        'threat_model': "google/gemini-2.5-flash-preview",   
-        'impact_model': "google/gemini-2.5-flash-preview",   
+        'species_model': "moonshotai/kimi-k2",  # NER
+        'threat_model': "moonshotai/kimi-k2",   # NER
+        'impact_model': "deepseek/deepseek-r1-0528",  # REASONING
         'use_openrouter': True
     }
 

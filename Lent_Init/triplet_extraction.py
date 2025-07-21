@@ -48,13 +48,14 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
     Be specific and detailed about the mechanisms described."""
 
     try:
-        summary_response = await llm_generate(
+        summary_response = await llm_generate_with_retry(
             prompt=f"Text to summarize:\n{abstract}\n\nStructured Summary:",
             system=system_prompt,
             model=llm_setup["model"],
             temp=0.1,
             timeout=120,
-            llm_setup=llm_setup
+            llm_setup=llm_setup,
+            max_retries=2
         )
         
         summary = summary_response.strip()
@@ -1012,23 +1013,36 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                         
         response_str = None
         try:
-            # Use Llama model specifically for verification log probs
-            #Tried with deepseek, doesn't support logprobs even though it says it does on openrouter, docs say unsupported https://api-docs.deepseek.com/guides/reasoning_model
-            verification_model = "meta-llama/llama-3.3-70b-instruct"
-            logger.info(f"Using {verification_model} for verification with logprobs")
+            verification_model = "moonshotai/kimi-k2"
+            logger.info(f"{verification_model} for verification with logprobs")
             
-            # Use retry logic for more robust verification because sometimes it doesn't return logprobs
-            response_result = await llm_generate_with_retry(
-                prompt=prompt, 
-                system=p_system_prompt, 
-                model=verification_model,
-                temp=0.0, 
-                format=p_verification_schema, 
-                llm_setup=p_llm_setup,
-                logprobs=True,
-                top_logprobs=5,
-                max_retries=2  # Limited retries for performance
-            )
+            try:
+                response_result = await llm_generate_with_retry(
+                    prompt=prompt, 
+                    system=p_system_prompt, 
+                    model=verification_model,
+                    temp=0.0, 
+                    format=p_verification_schema, 
+                    llm_setup=p_llm_setup,
+                    logprobs=True,
+                    top_logprobs=5,
+                    max_retries=2
+                )
+            except Exception as kimi_error:
+                # Fallback to Llama 70B if Kimi K2 fails with logprobs
+                logger.warning(f"Kimi K2 verification failed ({kimi_error}), falling back to Llama 70B")
+                verification_model = "meta-llama/llama-3.3-70b-instruct"
+                response_result = await llm_generate_with_retry(
+                    prompt=prompt, 
+                    system=p_system_prompt, 
+                    model=verification_model,
+                    temp=0.0, 
+                    format=p_verification_schema, 
+                    llm_setup=p_llm_setup,
+                    logprobs=True,
+                    top_logprobs=5,
+                    max_retries=2
+                )
             
             # Handle both single string and (content, logprobs) tuple returns
             if isinstance(response_result, tuple):
