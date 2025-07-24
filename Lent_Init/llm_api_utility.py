@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("pipeline")
 
-async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None, llm_setup=None, logprobs=False, top_logprobs=None):
+async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None, llm_setup=None, logprobs=False, top_logprobs=None, extra_body=None):
     content = ""
     try:
         if llm_setup and llm_setup.get('use_openrouter', False):
@@ -17,11 +17,6 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
             if not key:
                 raise ValueError("OPENROUTER_API_KEY not found")
             
-            client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=key,
-            )
-
             if llm_setup.get('api_rate_limiter'):
                 await llm_setup['api_rate_limiter'].async_wait()
 
@@ -38,15 +33,17 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
                  sys_msg = f"{system}\n\nRespond ONLY with valid JSON."
                  messages[0]["content"] = sys_msg
 
-            # Build API call parameters
             call_params = {
                 "model": model,
                 "messages": messages,
                 "temperature": temp,
                 "max_tokens": 4090,
-                "timeout": timeout,
+                #"require_parameters": True,
                 "stream": False  # added for logprobs consistency
             }
+            
+            if extra_body:
+                call_params.update(extra_body)
             
             # Add logprobs
             if logprobs:
@@ -57,11 +54,56 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
 
             logger.debug(f"API call params: {call_params}")
             
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
-                None, 
-                lambda: client.chat.completions.create(**call_params)
-            )
+            headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+                async with session.post("https://openrouter.ai/api/v1/chat/completions", 
+                                       headers=headers, json=call_params) as http_response:
+                     cost = 0.0
+                     
+                     if llm_setup and llm_setup.get("track_metrics", False):
+                         logger.debug(f"OpenRouter headers: {dict(http_response.headers)}")
+                     
+                     cost_headers = ['x-openrouter-cost', 'openrouter-cost', 'x-cost', 'cost']
+                     for header_name in cost_headers:
+                         if header_name in http_response.headers:
+                             try:
+                                 cost = float(http_response.headers[header_name])
+                                 if llm_setup and llm_setup.get("track_metrics", False):
+                                     logger.debug(f"Found cost in header '{header_name}': ${cost}")
+                                 break
+                             except (ValueError, TypeError):
+                                 continue
+                     
+                     response_data = await http_response.json()
+                     if http_response.status != 200:
+                         raise Exception(f"OpenRouter API error {http_response.status}: {response_data}")
+                     
+                     class PaymentResponse:
+                         def __init__(self, data, cost):
+                             self.model = data.get("model", model)
+                             self.choices = [PaymentChoice(data["choices"][0])]
+                             usage_data = data.get("usage", {})
+                             usage_data["cost"] = cost  # Add cost to usage
+                             self.usage = PaymentUsage(usage_data)
+                     
+                     class PaymentChoice:
+                         def __init__(self, choice_data):
+                             self.message = PaymentMessage(choice_data["message"])
+                             self.finish_reason = choice_data.get("finish_reason")
+                             self.logprobs = choice_data.get("logprobs")
+                     
+                     class PaymentMessage:
+                         def __init__(self, msg_data):
+                             self.content = msg_data["content"]
+                     
+                     class PaymentUsage:
+                         def __init__(self, usage_data):
+                             self.prompt_tokens = usage_data.get("prompt_tokens", 0)
+                             self.completion_tokens = usage_data.get("completion_tokens", 0)
+                             self.total_tokens = usage_data.get("total_tokens", 0)
+                             self.cost = usage_data.get("cost", 0.0)
+                     
+                     response = PaymentResponse(response_data, cost)
             
             # Log only important response details
             logger.debug(f"API Response: {response.model}, finish: {response.choices[0].finish_reason}, tokens: {response.usage.total_tokens}")
@@ -72,16 +114,32 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
             
             content = response.choices[0].message.content
             
-            # Return logprobs info if requested
+            usage_data = {
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": response.usage.total_tokens if response.usage else 0,
+                "cost": response.usage.cost if response.usage else 0.0
+            }
+            
+            if llm_setup and llm_setup.get("track_metrics", False):
+                logger.info(f"LLM Metrics - Model: {model}, Prompt: {usage_data['prompt_tokens']}, Completion: {usage_data['completion_tokens']}, Total: {usage_data['total_tokens']}, Cost: ${usage_data['cost']:.6f}")
+            
             if logprobs:
                 if response.choices[0].logprobs:
                     logger.debug(f"Received logprobs for {len(response.choices[0].logprobs.content) if response.choices[0].logprobs.content else 0} tokens")
-                    return content, response.choices[0].logprobs
+                    if llm_setup and llm_setup.get("return_metrics", False):
+                        return content, response.choices[0].logprobs, usage_data
+                    else:
+                        return content, response.choices[0].logprobs
                 else:
                     logger.debug(f"No logprobs received from OpenRouter")
-                    logger.warning(f"Model: {model}, Finish reason: {response.choices[0].finish_reason}")
-                    logger.warning(f"Response choice structure: {type(response.choices[0])}")
-                    return content, None
+                    if llm_setup and llm_setup.get("return_metrics", False):
+                        return content, None, usage_data
+                    else:
+                        logger.warning(f"Model: {model}, Finish reason: {response.choices[0].finish_reason}")
+                        return content, None
+            
+            return content
             
         else:
             # ollama
@@ -135,20 +193,90 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
     return strip_markdown_json(content)
 
 
-async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=120, format=None, llm_setup=None, logprobs=False, top_logprobs=None, max_retries=3):
+def enable_metrics_tracking(llm_setup):
+    """Enable metrics tracking for LLM calls with minimal code changes."""
+    if not llm_setup:
+        llm_setup = {}
+    
+    llm_setup["track_metrics"] = True
+    llm_setup["return_metrics"] = True
+    llm_setup["metrics_tracker"] = {
+        "total_cost": 0.0,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "total_calls": 0
+    }
+    return llm_setup
+
+
+def log_metrics_summary(llm_setup, logger=None):
+    if not logger:
+        import logging
+        logger = logging.getLogger("pipeline")
+    
+    if llm_setup and llm_setup.get("metrics_tracker"):
+        metrics = llm_setup["metrics_tracker"]
+        logger.info("--------LLM USAGE METRICS------")
+        logger.info(f"Total Cost: ${metrics['total_cost']:.6f}")
+        logger.info(f"Total Calls: {metrics['total_calls']}")
+        logger.info(f"Total Prompt Tokens: {metrics['total_prompt_tokens']:,}")
+        logger.info(f"Total Completion Tokens: {metrics['total_completion_tokens']:,}")
+        logger.info(f"Total Tokens: {metrics['total_prompt_tokens'] + metrics['total_completion_tokens']:,}")
+        if metrics['total_calls'] > 0:
+            logger.info(f"Average Cost per Call: ${metrics['total_cost'] / metrics['total_calls']:.6f}")
+            logger.info(f"Average Tokens per Call: {(metrics['total_prompt_tokens'] + metrics['total_completion_tokens']) / metrics['total_calls']:.1f}")
+    else:
+        logger.info("No metrics tracking enabled")
+
+
+def extract_content_from_result(result):
+    if isinstance(result, dict):
+        return result.get("content", "")
+    elif isinstance(result, tuple):
+        return result[0] if result else ""
+    else:
+        return str(result) if result else ""
+
+
+async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=120, format=None, llm_setup=None, logprobs=False, top_logprobs=None, max_retries=3, extra_body=None):
     for attempt in range(max_retries):
         try:
             logger.info(f"Attempt {attempt + 1}/{max_retries} for model {model}")
-            result = await llm_generate(prompt, system, model, temp, timeout, format, llm_setup, logprobs, top_logprobs)
+            result = await llm_generate(prompt, system, model, temp, timeout, format, llm_setup, logprobs, top_logprobs, extra_body)
             
-            # Check if we got a valid response
-            if isinstance(result, tuple):
-                content, logprobs_info = result
+            if isinstance(result, dict) and llm_setup and llm_setup.get("return_metrics", False):
+                content = result.get("content", "")
                 if content and content.strip():
                     logger.info(f"Success on attempt {attempt + 1}")
+                    if llm_setup.get("metrics_tracker"):
+                        usage = result.get("usage", {})
+                        llm_setup["metrics_tracker"]["total_cost"] += usage.get("cost", 0.0)
+                        llm_setup["metrics_tracker"]["total_prompt_tokens"] += usage.get("prompt_tokens", 0)
+                        llm_setup["metrics_tracker"]["total_completion_tokens"] += usage.get("completion_tokens", 0)
+                        llm_setup["metrics_tracker"]["total_calls"] += 1
                     return result
                 else:
                     logger.warning(f"Empty content on attempt {attempt + 1}")
+            elif isinstance(result, tuple):
+                if len(result) == 3:
+                    content, logprobs_info, usage = result
+                    if content and content.strip():
+                        logger.info(f"Success on attempt {attempt + 1}")
+                        if llm_setup and llm_setup.get("metrics_tracker"):
+                            llm_setup["metrics_tracker"]["total_cost"] += usage.get("cost", 0.0)
+                            llm_setup["metrics_tracker"]["total_prompt_tokens"] += usage.get("prompt_tokens", 0)
+                            llm_setup["metrics_tracker"]["total_completion_tokens"] += usage.get("completion_tokens", 0)
+                            llm_setup["metrics_tracker"]["total_calls"] += 1
+                        return result
+                    else:
+                        logger.warning(f"Empty content on attempt {attempt + 1}")
+                else:
+                    content, logprobs_info = result
+                    if content and content.strip():
+                        logger.info(f"Success on attempt {attempt + 1}")
+                        return result
+                    else:
+                        logger.warning(f"Empty content on attempt {attempt + 1}")
             elif result and result.strip():
                 logger.info(f"Success on attempt {attempt + 1}")
                 return result
@@ -227,5 +355,14 @@ def strip_markdown_json(text):
         result = result[7:-3].strip()
     elif result.startswith("```") and result.endswith("```"):
         result = result[3:-3].strip()
+    
+    import re
+    
+    if not (result.startswith('{') or result.startswith('[')):
+        json_pattern = r'(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\])'
+        matches = re.findall(json_pattern, result, re.DOTALL)
+        if matches:
+            result = max(matches, key=len)
+    
     return result
 

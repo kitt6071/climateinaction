@@ -6,7 +6,7 @@ from pathlib import Path
 import os
 import re
 from .cache import SimpleCache
-from .llm_api_utility import llm_generate
+from .llm_api_utility import llm_generate, extract_content_from_result
 
 logger = logging.getLogger("pipeline")
 
@@ -40,15 +40,17 @@ async def get_iucn_classification_json(subject: str, predicate: str, threat_desc
             Focus on the underlying cause.
             """
                 
-    response_str = await llm_generate(
+    response_result = await llm_generate(
         prompt=prompt,
         system=IUCN_THREAT_PROMPT_SYSTEM,
-        model=llm_setup['model'], 
+        model=llm_setup.get("model", "qwen/qwq-32b"), 
         temp=0.0, 
         format=iucn_schema,
-        llm_setup=llm_setup
+        llm_setup=llm_setup,
+        #extra_body={"require_parameters": True}
     )
 
+    response_str = extract_content_from_result(response_result)
     if response_str:
         try:
             result_json = json.loads(response_str) 

@@ -13,6 +13,7 @@ from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifie
                              setup_embedding_classifier, predict_relevance_embeddings)
 from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples
 from .triplet_extraction import verify_triplets, normalize_species_names, convert_to_summary, extract_entities_concurrently, generate_relationships_concurrently
+from .llm_api_utility import enable_metrics_tracking, log_metrics_summary
 from .graph_analysis import (build_global_graph, analyze_graph_detailed, 
                            enrich_graph_with_embeddings, 
                            create_embedding_visualization, analyze_hub_node,
@@ -30,6 +31,9 @@ async def run_main_pipeline_logic(args):
     
     llm_sys = setup_llm() 
     model_name = os.getenv('MODEL_NAME_FOR_RUN', llm_sys["model"])
+    
+    # Enable metrics tracking for detailed usage and cost analysis
+    llm_sys = enable_metrics_tracking(llm_sys)
 
     max_from_args = getattr(args, 'max', None) 
     max_env = os.getenv('MAX_RESULTS', 'all')
@@ -128,27 +132,28 @@ async def run_main_pipeline_logic(args):
     
     chunk = []
     
-    batch_size = 1000
+    batch_size = 100
     skip_rows = 0
     processed_count = 0 
     total_scanned = 0
-
-    if max_limit != float('inf'):
-        if max_limit <= 50:
-            batch_size = min(1000, max_limit * 20)
-        elif max_limit <= 1000:
-            batch_size = min(5000, max_limit * 5)
-        else:
-            batch_size = min(50000, max_limit * 2)
-    else:
-        batch_size = 10000
-
     logger.info(f"Starting data load from parquet (batch: {batch_size}, max: {max_limit if max_limit != float('inf') else 'all'}, chunk: {BATCH_CONFIG['processing_batch_size']})")
     irrelevant_file = results_path / "irrelevant_abstracts.jsonl"
 
-    shorebird_keywords = [
-    # Core Shorebird Terms
-    'shorebird', 'shore bird', 'wader', 'wading bird',
+    def has_shorebird_keywords(text):
+        text_lower = text.lower()
+        
+        if any(exclude in text_lower for exclude in [
+            'root-knot', 'root knot', 'nematode', 'nematodos', 'plover cove', 
+            'plover lake', 'plover point', 'plover bay', 'reservoir', 
+            'virtual client', 'ceramic sherd', 'escurrimiento', 'sedimentos', 
+            'comunidades de a', 'haematococcus pluvialis', 'knot sandpiper', 'great knot'
+        ]):
+            return False
+            
+        import re
+
+        specific_terms = [
+    'shorebird', 'shore bird', 'wader', 'wading bird', 'shorebirds'
 
     # Major Shorebird Families (Common Names)
     'sandpiper', 'plover', 'godwit', 'curlew', 'turnstone', 'oystercatcher',
@@ -203,57 +208,11 @@ async def run_main_pipeline_logic(args):
     'cream-colored courser', 'collared pratincole',
 
     # Unique Characteristics/Behaviors
-    'long-legged', 'long-billed', 'short-billed', 'upturned bill', 'downcurved bill'
-]
-
-    def has_shorebird_keywords(text):
-        text_lower = text.lower()
-        
-        # Quick exclusions for obvious false positives
-        if any(exclude in text_lower for exclude in [
-            'root-knot', 'root knot', 'nematode', 'nematodos', 'plover cove', 
-            'reservoir', 'virtual client', 'ceramic sherd',
-            'escurrimiento', 'sedimentos', 'comunidades de a',
-            'haematococcus pluvialis'  # algae species
-        ]):
-            return False
-            
-        # Use word boundaries for broad terms to avoid partial matches
-        import re
-        
-        # Check for specific scientific names first (these are safer)
-        scientific_genera = [
-            'calidris', 'tringa', 'charadrius', 'pluvialis', 'numenius', 
-            'limosa', 'arenaria', 'haematopus', 'recurvirostra', 'himantopus',
-            'phalaropus', 'gallinago', 'scolopax', 'actitis', 'limnodromus'
-        ]
-        
-        for genus in scientific_genera:
-            if re.search(r'\b' + genus + r'\b', text_lower):
-                return True
-        
-        # Check for specific shorebird terms with word boundaries
-        specific_terms = [
-            'shorebird', 'shore bird', 'wader', 'wading bird',
-            'sandpiper', 'oystercatcher', 'godwit', 'curlew', 'turnstone',
-            'avocet', 'stilt', 'phalarope', 'snipe', 'woodcock',
-            'yellowlegs', 'dowitcher', 'sanderling', 'dunlin',
-            'killdeer', 'whimbrel', 'greenshank', 'redshank'
-        ]
+    'long-legged', 'long-billed', 'short-billed', 'upturned bill', 'downcurved bill']
         
         for term in specific_terms:
-            if re.search(r'\b' + term + r'\b', text_lower):
+            if re.search(r'\b' + term + r's?\b', text_lower):
                 return True
-        
-        # Check for 'plover' but exclude place names
-        if re.search(r'\b(plover|plovers)\b', text_lower):
-            if not re.search(r'(plover cove|plover lake|plover point|plover bay)', text_lower):
-                return True
-        
-        # Check for 'knot' but exclude plant/nematode contexts  
-        if re.search(r'\b(red knot|great knot|knot sandpiper)\b', text_lower):
-            return True
-        
         return False
 
     async def check_relevance(title, abstract, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
@@ -811,6 +770,9 @@ async def process_abstract_chunk(
     logger.info(f"Normalization done: {len(normalized_triplets)} triplets, {len(taxonomy_map)} taxonomy entries")
     
     logger.info(f"Chunk complete: returning {len(normalized_triplets)} triplets, {len(taxonomy_map)} taxonomy entries")
+    
+    log_metrics_summary(llm_setup, logger)
+    
     return normalized_triplets, taxonomy_map
 
 

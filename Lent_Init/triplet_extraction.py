@@ -8,7 +8,7 @@ from pathlib import Path
 from thefuzz import fuzz
 import sys
 import os
-from .llm_api_utility import llm_generate, llm_generate_with_retry
+from .llm_api_utility import llm_generate, llm_generate_with_retry, extract_content_from_result
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -51,14 +51,14 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
         summary_response = await llm_generate_with_retry(
             prompt=f"Text to summarize:\n{abstract}\n\nStructured Summary:",
             system=system_prompt,
-            model=llm_setup["model"],
+            model=llm_setup.get("model", "qwen/qwq-32b"),
             temp=0.1,
             timeout=120,
             llm_setup=llm_setup,
             max_retries=2
         )
         
-        summary = summary_response.strip()
+        summary = extract_content_from_result(summary_response).strip()
         
         if len(summary) < 50:
             logger.warning("summary looks too short")
@@ -169,15 +169,17 @@ Do not include any other explanatory text or markdown around the JSON object.
     
     user_prompt = abstract_text
     try:
-        response_str = await llm_generate(
+        response_result = await llm_generate(
             prompt=user_prompt,
             system=combined_system_prompt,
-            model=llm_setup.get("model"), 
+            model=llm_setup.get("model", "qwen/qwen3-235b-a22b"), 
             temp=0.0, 
             format=entity_extraction_schema, 
-            llm_setup=llm_setup
+            llm_setup=llm_setup,
+            #extra_body={"require_parameters": True}
         )
         
+        response_str = extract_content_from_result(response_result)
         if not response_str:
             model_name = llm_setup.get("model", "unknown")
             logger.error(f"P2.1: LLM ({model_name}) returned empty response for entity extraction")
@@ -302,15 +304,17 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
                     """
     raw_triplets = []
     try:
-        response_str = await llm_generate(
+        response_result = await llm_generate(
             prompt=user_prompt,
             system=system_prompt,
-            model=llm_setup.get("model"), 
+            model=llm_setup.get("model", "deepseek/deepseek-r1"), 
             temp=0.0,
             format=relationship_schema,
-            llm_setup=llm_setup
+            llm_setup=llm_setup,
+            #extra_body={"require_parameters": True}
         )
         
+        response_str = extract_content_from_result(response_result)
         if not response_str:
             model_name = llm_setup.get("model", "unknown")
             logger.error(f"P2.2: LLM ({model_name}) returned empty response for relationship generation. DOI: {doi}")
@@ -422,7 +426,8 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
             model=llm_setup["species_model"],
             temp=0.1,
             format=species_schema, # This tells the LLM the schema we want for its *output value*
-            llm_setup=llm_setup
+            llm_setup=llm_setup,
+            #extra_body={"require_parameters": True}
         )
         
         species_list = []
@@ -535,7 +540,8 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
             model=llm_setup["threat_model"],
             temp=0.1,
             format=threats_schema,
-            llm_setup=llm_setup
+            llm_setup=llm_setup,
+            #extra_body={"require_parameters": True}
         )
         
         threats_data_parsed = None
@@ -699,7 +705,8 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
             model=llm_setup["impact_model"],
             temp=0.1,
             format=impacts_schema,
-            llm_setup=llm_setup
+            llm_setup=llm_setup,
+            #extra_body={"require_parameters": True}
         )
         
         impacts_data_parsed_list = []
@@ -863,14 +870,16 @@ async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str]],
         
         async def get_taxonomy_for_subject(s_name, s_llm_name):
             try:
-                response_json_str = await llm_generate(
+                response_result = await llm_generate(
                     prompt=f"Normalize this species name: {s_llm_name}",
                     system=system_prompt,
-                    model=llm_setup["model"],
+                    model=llm_setup.get("model", "qwen/qwen3-235b-a22b"),
                     temp=0.1,
                     format=normalization_schema,
-                    llm_setup=llm_setup
+                    llm_setup=llm_setup,
+                    #extra_body={"require_parameters": True}
                 )
+                response_json_str = extract_content_from_result(response_result)
                 if not response_json_str:
                     logger.error(f"Error normalizing '{s_name}': LLM returned empty response.")
                     return s_name, {
@@ -1013,41 +1022,33 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                         
         response_str = None
         try:
-            verification_model = "moonshotai/kimi-k2"
+            verification_model = p_llm_setup.get("model", "qwen/qwen3-235b-a22b")
             logger.info(f"{verification_model} for verification with logprobs")
             
-            try:
-                response_result = await llm_generate_with_retry(
-                    prompt=prompt, 
-                    system=p_system_prompt, 
-                    model=verification_model,
-                    temp=0.0, 
-                    format=p_verification_schema, 
-                    llm_setup=p_llm_setup,
-                    logprobs=True,
-                    top_logprobs=5,
-                    max_retries=2
-                )
-            except Exception as kimi_error:
-                # Fallback to Llama 70B if Kimi K2 fails with logprobs
-                logger.warning(f"Kimi K2 verification failed ({kimi_error}), falling back to Llama 70B")
-                verification_model = "meta-llama/llama-3.3-70b-instruct"
-                response_result = await llm_generate_with_retry(
-                    prompt=prompt, 
-                    system=p_system_prompt, 
-                    model=verification_model,
-                    temp=0.0, 
-                    format=p_verification_schema, 
-                    llm_setup=p_llm_setup,
-                    logprobs=True,
-                    top_logprobs=5,
-                    max_retries=2
-                )
+            response_result = await llm_generate_with_retry(
+                prompt=prompt, 
+                system=p_system_prompt, 
+                model=verification_model,
+                temp=0.0, 
+                format=p_verification_schema, 
+                llm_setup=p_llm_setup,
+                logprobs=True,
+                top_logprobs=5,
+                max_retries=2,
+                #extra_body={"require_parameters": True}
+            )
             
-            # Handle both single string and (content, logprobs) tuple returns
             if isinstance(response_result, tuple):
-                response_str, logprobs_info = response_result
-                logger.debug(f"Received response with logprobs for triplet: {subject}|{predicate}|{obj}")
+                if len(response_result) == 3:
+                    response_str, logprobs_info, usage_info = response_result
+                    logger.debug(f"Received response with logprobs and usage for triplet: {subject}|{predicate}|{obj}")
+                elif len(response_result) == 2:
+                    response_str, logprobs_info = response_result
+                    logger.debug(f"Received response with logprobs for triplet: {subject}|{predicate}|{obj}")
+                else:
+                    response_str = response_result[0] if response_result else ""
+                    logprobs_info = None
+                    logger.debug(f"Received unexpected tuple format for triplet: {subject}|{predicate}|{obj}")
             else:
                 response_str = response_result
                 logprobs_info = None
@@ -1098,8 +1099,8 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                                     logger.debug(f"Found NO token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
                 
                 logger.debug(f"Logprob analysis complete: examined {tokens_examined} tokens")
-                logger.debug(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")
-                logger.debug(f"NO tokens found: {len(no_tokens_found)} (best: {no_logprob:.4f})")
+                logger.info(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")
+                logger.info(f"NO tokens found: {len(no_tokens_found)} (best: {no_logprob:.4f})")
                 
                 # Use log probability as confidence if found
                 if verification_decision.upper() == "YES" and yes_logprob > -float('inf'):
@@ -1149,9 +1150,9 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
     
     if not tasks: return [], counts
 
-    logger.info(f"Starting verification of {len(tasks)} triplets using meta-llama/llama-3.3-70b-instruct with log probability analysis...")
+    logger.info(f"Starting verification of {len(tasks)} triplets using {llm_setup.get('model', 'qwen/qwen3-235b-a22b')} with log probability analysis...")
     verification_results = await asyncio.gather(*tasks, return_exceptions=True)
-    logger.debug(f"Llama verification batch complete - processing results...")
+    logger.debug(f"Verification batch complete - processing results...")
 
     for i, res_tuple_or_exc in enumerate(verification_results):
         original_triplet = triplet_list[i]
@@ -1175,11 +1176,12 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
         elif decision == "YES":
             # Handle both log probability and regular confidence thresholds
             if confidence < 0:  # Log probability (negative values, closer to 0 = higher confidence)
-                log_prob_threshold = -2.0  # logprobs threshold
+                # Logprob examples: -0.1 (very confident), -1.0 (medium), -3.0 (low confidence)
+                log_prob_threshold = -2.0  # logprobs threshold (accept if >= -2.0)
                 is_confident = confidence >= log_prob_threshold
                 conf_type = "logprob"
                 logger.info(f"Log probability threshold comparison: {confidence:.4f} >= {log_prob_threshold} = {is_confident}")
-            else:  # normal conf reported from llm
+            else:  # normal conf reported from llm (0.0 to 1.0 scale)
                 is_confident = confidence >= verification_cutoff
                 conf_type = "conf"
                 logger.info(f"Regular confidence threshold comparison: {confidence:.4f} >= {verification_cutoff} = {is_confident}")

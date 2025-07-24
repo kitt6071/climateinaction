@@ -757,9 +757,8 @@ def train_classifier_with_real_test_set(round_num=1):
                 else:
                     logger.info("No targeted negatives generated")
             else:
-                logger.info("🎉 MODEL HAS CONVERGED! 🎉")
+                logger.info("MODEL HAS CONVERGED")
                 logger.info("No false positives >0.7 and no uncertain cases found")
-                logger.info("Training complete - model is performing well!")
         
         else:
             logger.warning("Parquet file not found")
