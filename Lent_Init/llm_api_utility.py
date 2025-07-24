@@ -90,11 +90,19 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
                          def __init__(self, choice_data):
                              self.message = PaymentMessage(choice_data["message"])
                              self.finish_reason = choice_data.get("finish_reason")
-                             self.logprobs = choice_data.get("logprobs")
+                             logprobs_data = choice_data.get("logprobs")
+                             self.logprobs = PaymentLogprobs(logprobs_data) if logprobs_data else None
                      
                      class PaymentMessage:
                          def __init__(self, msg_data):
                              self.content = msg_data["content"]
+                     
+                     class PaymentLogprobs:
+                         def __init__(self, logprobs_data):
+                             if logprobs_data:
+                                 self.content = logprobs_data.get("content", [])
+                             else:
+                                 self.content = []
                      
                      class PaymentUsage:
                          def __init__(self, usage_data):
