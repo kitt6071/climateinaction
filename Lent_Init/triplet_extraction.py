@@ -45,7 +45,8 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
     - Specific Impacts
     - Causal Relationships
     
-    Be specific and detailed about the mechanisms described."""
+    CRITICAL: Keep the summary concise but informative. Maximum 300 words total.
+    Be specific and detailed about the mechanisms described, but use brief, clear language."""
 
     try:
         summary_response = await llm_generate_with_retry(
@@ -164,6 +165,11 @@ Provide a brief explanation of your reasoning for the species and threats you id
 
 Provide your complete output *only* as a single valid JSON object matching this schema:
 {json.dumps(entity_extraction_schema)}
+
+CRITICAL: Be extremely concise in all fields:
+- Threat descriptions: Use brief phrases (e.g., "habitat loss" not "widespread habitat loss due to urbanization")
+- Reasoning: Maximum 1-2 sentences total
+
 Do not include any other explanatory text or markdown around the JSON object.
 """
     
@@ -289,6 +295,12 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
             For each relationship triplet, provide:
             - predicate: The relationship/impact mechanism  
             - reason: Brief explanation of why this relationship exists based on the abstract text
+            
+            CRITICAL: Be extremely concise:
+            - Subject/Object: Use exact names from provided lists only
+            - Predicate: Short phrase describing impact (e.g., "suffers mortality due to")
+            - Reason: Maximum 1 sentence explaining the relationship
+            
             Output as a JSON array of objects. Do not include any explanatory text outside the JSON."""
         )
     user_prompt = f"""Abstract:
@@ -856,8 +868,9 @@ async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str]],
         3. Provide the taxonomic classification (Kingdom, Phylum, Class, Order, Family, Genus) as specifically as possible based on the input.
         4. Determine if the input refers to a bird (i.e., belongs to Class Aves) and set 'is_bird' to true or false.
 
+        CRITICAL: Be extremely concise in all text fields. Use shortest possible names and classifications.
         Important: Only set 'is_bird' to true if the species/group belongs to Class Aves (birds).
-        Respond with valid JSON matching the required schema."""
+        Respond with valid JSON matching the required schema. No explanatory text outside JSON."""
 
     species_taxonomy_cache = {}
     
@@ -987,9 +1000,10 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
         "\n1. The relationship must be explicitly stated or strongly implied in the abstract"
         "\n2. The subject must be a bird species (Class Aves)"
         "\n3. The threat/impact must be correctly described"
-        "\nResponse format: Return ONLY valid JSON with exactly these keys:"
+        "\nCRITICAL: Be extremely concise. Return ONLY valid JSON with exactly these keys:"
         '\n{"verification": "YES" or "NO", "confidence": 0.0-1.0}'
         "\nUse YES only if the relationship is clearly supported by the abstract AND the subject is a bird."
+        "\nNo explanatory text outside the JSON."
     )
     abstract_hash_part = hashlib.md5(abstract.encode('utf-8', errors='replace')).hexdigest()[:16]
     cache_key_text = f"verify_json_confidence_batch_async:{abstract_hash_part}:{verification_cutoff}:{len(triplet_list)}" 

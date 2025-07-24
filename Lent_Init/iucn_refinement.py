@@ -101,7 +101,7 @@ IUCN_CATEGORIES_TEXT = """
 
 IUCN_THREAT_PROMPT_SYSTEM = f"""
             You are an expert ecological threat classifier. Your task is to assign the single most appropriate IUCN threat category to a given threat description, considering the context of the species and the impact mechanism.
-
+            CRITICAL: Be extremely concise. Only return the IUCN code and name according to the json schema. Do not include any explanatory text outside the JSON.
             {IUCN_CATEGORIES_TEXT}
 
             **Instructions:**
