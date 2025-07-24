@@ -1078,25 +1078,34 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                 
                 # Search through all tokens for YES/NO
                 for i, token_info in enumerate(logprobs_info.content):
-                    if token_info.top_logprobs:
+                    # Handle both object and dict access patterns
+                    top_logprobs = getattr(token_info, 'top_logprobs', None) or token_info.get('top_logprobs') if isinstance(token_info, dict) else None
+                    if top_logprobs:
                         tokens_examined += 1
-                        logger.debug(f"Token {i}: examining {len(token_info.top_logprobs)} top alternatives")
-                        for top_token in token_info.top_logprobs:
-                            token_lower = top_token.token.lower().strip()
-                            logger.debug(f"   Token: '{top_token.token}' (normalized: '{token_lower}') -> logprob: {top_token.logprob:.4f}")
+                        logger.debug(f"Token {i}: examining {len(top_logprobs)} top alternatives")
+                        for top_token in top_logprobs:
+                            # Handle both object and dict access patterns for tokens
+                            token_text = getattr(top_token, 'token', None) or top_token.get('token') if isinstance(top_token, dict) else str(top_token)
+                            token_logprob = getattr(top_token, 'logprob', None) or top_token.get('logprob') if isinstance(top_token, dict) else 0.0
+                            
+                            if not token_text:
+                                continue
+                                
+                            token_lower = token_text.lower().strip()
+                            logger.debug(f"   Token: '{token_text}' (normalized: '{token_lower}') -> logprob: {token_logprob:.4f}")
                             
                             if token_lower in ['yes', '"yes"', 'true']:
                                 old_yes = yes_logprob
-                                yes_logprob = max(yes_logprob, top_token.logprob)
-                                yes_tokens_found.append((top_token.token, top_token.logprob))
-                                if top_token.logprob > old_yes:
-                                    logger.debug(f"Found YES token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
+                                yes_logprob = max(yes_logprob, token_logprob)
+                                yes_tokens_found.append((token_text, token_logprob))
+                                if token_logprob > old_yes:
+                                    logger.debug(f"Found YES token: '{token_text}' with logprob {token_logprob:.4f}")
                             elif token_lower in ['no', '"no"', 'false']:
                                 old_no = no_logprob
-                                no_logprob = max(no_logprob, top_token.logprob)
-                                no_tokens_found.append((top_token.token, top_token.logprob))
-                                if top_token.logprob > old_no:
-                                    logger.debug(f"Found NO token: '{top_token.token}' with logprob {top_token.logprob:.4f}")
+                                no_logprob = max(no_logprob, token_logprob)
+                                no_tokens_found.append((token_text, token_logprob))
+                                if token_logprob > old_no:
+                                    logger.debug(f"Found NO token: '{token_text}' with logprob {token_logprob:.4f}")
                 
                 logger.debug(f"Logprob analysis complete: examined {tokens_examined} tokens")
                 logger.info(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")

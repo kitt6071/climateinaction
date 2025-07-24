@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("pipeline")
 
-async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None, llm_setup=None, logprobs=False, top_logprobs=None, extra_body=None):
+async def llm_generate(prompt, system, model, temp=0.1, timeout=180, format=None, llm_setup=None, logprobs=False, top_logprobs=None, extra_body=None):
     content = ""
     try:
         if llm_setup and llm_setup.get('use_openrouter', False):
@@ -78,8 +78,13 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=120, format=None
                      if http_response.status != 200:
                          raise Exception(f"OpenRouter API error {http_response.status}: {response_data}")
                      
+                     if not response_data:
+                         raise Exception(f"Empty response data from OpenRouter")
+                     
                      class PaymentResponse:
                          def __init__(self, data, cost):
+                             if not data:
+                                 raise Exception("No data provided to PaymentResponse")
                              self.model = data.get("model", model)
                              self.choices = [PaymentChoice(data["choices"][0])]
                              usage_data = data.get("usage", {})
@@ -246,7 +251,7 @@ def extract_content_from_result(result):
         return str(result) if result else ""
 
 
-async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=120, format=None, llm_setup=None, logprobs=False, top_logprobs=None, max_retries=3, extra_body=None):
+async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=180, format=None, llm_setup=None, logprobs=False, top_logprobs=None, max_retries=3, extra_body=None):
     for attempt in range(max_retries):
         try:
             logger.info(f"Attempt {attempt + 1}/{max_retries} for model {model}")
@@ -303,7 +308,7 @@ async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=120, 
     return "" if not logprobs else ("", None)
 
 
-def openrouter_generate(prompt, model="google/gemini-2.0-flash-001", system="", temp=0.1, timeout=120, format=None):
+def openrouter_generate(prompt, model="google/gemini-2.0-flash-001", system="", temp=0.1, timeout=180, format=None):
     load_dotenv()
     
     key = os.getenv('OPENROUTER_API_KEY')
