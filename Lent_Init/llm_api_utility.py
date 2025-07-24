@@ -37,7 +37,7 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=180, format=None
                 "model": model,
                 "messages": messages,
                 "temperature": temp,
-                "max_tokens": 2048,
+                "max_tokens": 1536,
                 #"require_parameters": True,
                 "stream": False  # added for logprobs consistency
             }
