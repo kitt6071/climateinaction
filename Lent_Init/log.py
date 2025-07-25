@@ -24,7 +24,7 @@ def analyze_log_file(log_path: Path) -> dict:
     current_model = "Unknown"
 
     metric_regex = re.compile(
-        r"LLM Metrics - Model: ([\w/.-]+), "
+        r"LLM Metrics - Model: ([\w/.:-]+), "
         r"Prompt: (\d+), "
         r"Completion: (\d+), "
         r"Total: (\d+)"
