@@ -4,12 +4,11 @@ import requests
 import logging
 import config
 from config import (
-    DATA_SOURCES, DATA_PATH, ML_LIBS_LOADED, initialize_analyzer
+    DATA_SOURCES, DATA_PATH, initialize_analyzer
 )
 
-if ML_LIBS_LOADED:
-    import torch
-    from sentence_transformers import SentenceTransformer
+import torch
+from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +60,8 @@ def load_data_if_needed():
         
         config.triplets_data = app_data.get("triplets", [])
         
-        if not ML_LIBS_LOADED:
-            logger.warning("ML libraries not available - some features will be disabled")
-        else:
-            logger.info("Using pre-loaded ML libraries")
-        
         for triplet in config.triplets_data:
-            if 'embedding' in triplet and triplet['embedding'] is not None and ML_LIBS_LOADED:
+            if 'embedding' in triplet and triplet['embedding'] is not None:
                 triplet['embedding_tensor'] = torch.tensor(triplet['embedding'])
             else:
                 triplet['embedding_tensor'] = None
@@ -99,10 +93,6 @@ def load_data_chunked(file_path=DATA_PATH, chunk_size=500):
     #Loads data in chunks from a JSON file to be more memory-efficient.
     logger.info("Starting chunked data loading...")
     
-    if not ML_LIBS_LOADED:
-        logger.warning("ML libraries not available - some features will be disabled")
-        return False
-
     try:
         with open(file_path, 'r') as f:
             all_data = json.load(f)

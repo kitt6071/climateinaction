@@ -243,6 +243,10 @@ async function loadInitialData() {
         window.AppState.allTripletsData = data;
         console.log(`${data.length} triplets loaded.`);
         
+        window.dispatchEvent(new CustomEvent('tripletsLoaded', { 
+            detail: { triplets: data } 
+        }));
+        
         if (typeof Fuse !== 'undefined') {
             window.AppState.fuse = new Fuse(data, window.AppConfig.fuseOptions);
             console.log('Fuse search initialized.');

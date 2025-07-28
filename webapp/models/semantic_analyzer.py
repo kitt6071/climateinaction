@@ -1,15 +1,13 @@
 import re
 import logging
 from collections import defaultdict
-from config import ML_LIBS_LOADED
 
-if ML_LIBS_LOADED:
-    from sentence_transformers import SentenceTransformer
-    from sklearn.cluster import KMeans, DBSCAN
-    from sklearn.mixture import GaussianMixture
-    from sklearn.metrics import silhouette_score
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.mixture import GaussianMixture
+from sklearn.metrics import silhouette_score
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +19,8 @@ class SemanticThreatAnalyzer:
         self.impact_embeddings = {}
         self.threat_clusters = {}
         self.impact_clusters = {}
-        self.ml_loaded = False
-    
-    def _ensure_ml_loaded(self):
-        if not self.ml_loaded and ML_LIBS_LOADED:
-            self.model = SentenceTransformer(self.model_name)
-            self.ml_loaded = True
-            return True
-        return self.ml_loaded
         
     def generate_embeddings(self, texts, cache_key=None):
-        if not self._ensure_ml_loaded():
-            return []
         if cache_key and cache_key in self.threat_embeddings:
             return self.threat_embeddings[cache_key]
         embeddings = self.model.encode(texts, show_progress_bar=False)
@@ -41,9 +29,6 @@ class SemanticThreatAnalyzer:
         return embeddings
     
     def cluster_threats(self, threat_texts, method='kmeans', n_clusters=None):
-        if not self._ensure_ml_loaded():
-            return [0] * len(threat_texts), [{'label': 'ML Libraries Not Available', 'keywords': [], 'size': len(threat_texts)}]
-        
         if len(threat_texts) < 2:
             return [0] * len(threat_texts), [{'label': 'Single Threat', 'keywords': [], 'size': len(threat_texts)}]
         

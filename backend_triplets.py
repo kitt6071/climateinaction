@@ -2,7 +2,7 @@ import json
 from sentence_transformers import SentenceTransformer
 
 
-TRIPLETS_FILE_PATH = "/Users/kittsonhamill/Desktop/dissertation/climate_inaction/Lent_Init/runs/second run/deepseek_deepseek-r1-0528_10000/results/enriched_triplets.json"
+TRIPLETS_FILE_PATH = "/Users/kittsonhamill/Desktop/9640I-sourcecode/Lent_Init/runs/moonshotai_kimi-k2_1000/results/enriched_triplets.json"
 OUTPUT_SUBDIR = "webapp/backend/"
 OUTPUT_FILENAME = "data_with_embeddings.json" 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'

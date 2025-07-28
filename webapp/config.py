@@ -1,10 +1,12 @@
 import os
 import logging
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 # Data source configuration
 DATA_SOURCES = [
     "/data/data_with_embeddings.json",  # Railway volume
-    "backend/data_with_embeddings.json",  # Local file
+    os.path.join(PROJECT_ROOT, "webapp/backend/data_with_embeddings.json"),
+    os.path.join(PROJECT_ROOT, "backend/data_with_embeddings.json"),
     "https://storage.googleapis.com/climateinaction/data_with_embeddings.json"  # Google Cloud Storage
 ]
 DATA_PATH = "data_with_embeddings.json"

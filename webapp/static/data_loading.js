@@ -43,6 +43,10 @@
             
             console.log(`Loaded ${data.length} triplets.`);
             
+            window.dispatchEvent(new CustomEvent('tripletsLoaded', { 
+                detail: { triplets: data } 
+            }));
+            
             return data;
             
         } catch (error) {

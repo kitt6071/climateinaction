@@ -29,6 +29,7 @@
     <script src="{{ url_for('static', filename='kg_query.js') }}"></script>
     <script src="{{ url_for('static', filename='kg_transfer.js') }}"></script>
     <script src="{{ url_for('static', filename='chain_build.js') }}"></script>
+    <script src="{{ url_for('static', filename='triplet_review.js') }}"></script>
     <script>
         async function loadDataFromCloud() {
             const button = document.getElementById('loadDataButton');
@@ -68,9 +69,10 @@
         <nav class="tab-navigation">
             <button class="tab-button active" data-tab="explorer">Explorer</button>
             <button class="tab-button" data-tab="profiling">Species Profiling</button>
-            <button class="tab-button" data-tab="systemic">Systemic Risk Analysis</button>
-            <button class="tab-button" data-tab="knowledge-transfer">Knowledge Transfer</button>
-            <button class="tab-button" data-tab="embeddings">Threat Embeddings</button>
+            <button class="tab-button" data-tab="review">Triplet Review</button>
+            <button class="tab-button" data-tab="systemic" style="display: none;">Systemic Risk Analysis</button>
+            <button class="tab-button" data-tab="knowledge-transfer" style="display: none;">Knowledge Transfer</button>
+            <button class="tab-button" data-tab="embeddings" style="display: none;">Threat Embeddings</button>
         </nav>
         <button id="toggleChainModeButton">Start Exploration Chain</button>
         <button id="loadDataButton" class="load-data-btn" onclick="loadDataFromCloud()">Load Data from Cloud</button>
@@ -172,6 +174,182 @@
                             <h4>Comprehensive Threat-Impact Profile</h4>
                             <div id="speciesProfileContainer"></div>
                         </section>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="reviewTab" class="tab-content">
+            <div class="review-container">
+                <h2>Triplet Review & Validation</h2>
+                <p class="section-description">
+                    Help improve data quality by reviewing randomly selected triplets for accuracy and relevance.
+                </p>
+                
+                <div class="review-controls">
+                    <div id="reviewerSetup" class="reviewer-setup">
+                        <h3>Start Review Session</h3>
+                        <div class="setup-form">
+                            <div class="input-group">
+                                <label for="sessionReviewerName">Your Name/ID:</label>
+                                <input type="text" id="sessionReviewerName" placeholder="Enter your name or reviewer ID" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="sessionExpertise">Your Expertise:</label>
+                                <select id="sessionExpertise" required>
+                                    <option value="">Select your primary area...</option>
+                                    <option value="ornithology">Ornithology</option>
+                                    <option value="marine-biology">Marine Biology</option>
+                                    <option value="conservation-biology">Conservation Biology</option>
+                                    <option value="ecology">Ecology</option>
+                                    <option value="wildlife-management">Wildlife Management</option>
+                                    <option value="taxonomy">Taxonomy</option>
+                                    <option value="environmental-science">Environmental Science</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label for="sessionInstitution">Institution (optional):</label>
+                                <input type="text" id="sessionInstitution" placeholder="University, organization, etc.">
+                            </div>
+                            <button id="startReviewSession" class="start-session-btn">Start Review Session</button>
+                        </div>
+                    </div>
+                    
+                    <div id="activeSession" class="active-session" style="display: none;">
+                        <div class="session-info">
+                            <h3>Active Review Session</h3>
+                            <div class="reviewer-info">
+                                <span class="reviewer-label">Reviewer:</span>
+                                <span id="activeReviewerName" class="reviewer-name">-</span>
+                                <span class="expertise-label">Expertise:</span>
+                                <span id="activeExpertise" class="expertise-value">-</span>
+                            </div>
+                            <div class="session-actions">
+                                <button id="loadRandomTriplet" class="load-data-btn">Load Random Triplet</button>
+                                <button id="endSession" class="end-session-btn">End Session</button>
+                            </div>
+                        </div>
+                        <div id="reviewStatus" class="review-status"></div>
+                    </div>
+                </div>
+                
+                <div id="tripletReviewSection" class="triplet-review-section" style="display: none;">
+                    <div class="review-layout">
+                        <!-- Left side: Abstract and DOI -->
+                        <div class="abstract-panel">
+                            <div class="doi-section">
+                                <h3>Source Publication</h3>
+                                <div class="doi-info">
+                                    <span class="doi-label">DOI:</span>
+                                    <a id="reviewDOI" href="#" target="_blank" class="doi-link">-</a>
+                                </div>
+                            </div>
+                            
+                            <div class="title-section">
+                                <h3>Title</h3>
+                                <div id="reviewTitle" class="title-text">
+                                    Loading title...
+                                </div>
+                            </div>
+                            
+                            <div class="abstract-section">
+                                <h3>Abstract</h3>
+                                <div id="reviewAbstract" class="abstract-text">
+                                    Loading abstract...
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Right side: Triplet and Review Form -->
+                        <div class="review-panel">
+                            <div class="triplet-display">
+                                <h3>Extracted Triplet</h3>
+                                <div class="triplet-breakdown">
+                                    <div class="triplet-component">
+                                        <label>Subject (Species):</label>
+                                        <div id="reviewSubject" class="triplet-value">-</div>
+                                    </div>
+                                    <div class="triplet-component">
+                                        <label>Predicate (Relationship):</label>
+                                        <div id="reviewPredicate" class="triplet-value">-</div>
+                                    </div>
+                                    <div class="triplet-component">
+                                        <label>Object (Threat):</label>
+                                        <div id="reviewObject" class="triplet-value">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="review-form">
+                                <h3>Expert Review</h3>
+                                
+                                <div class="rating-section">
+                                    <label>Overall Accuracy:</label>
+                                    <div class="rating-buttons">
+                                        <button type="button" class="rating-btn" data-rating="1">1 - Poor</button>
+                                        <button type="button" class="rating-btn" data-rating="2">2 - Fair</button>
+                                        <button type="button" class="rating-btn" data-rating="3">3 - Good</button>
+                                        <button type="button" class="rating-btn" data-rating="4">4 - Very Good</button>
+                                        <button type="button" class="rating-btn" data-rating="5">5 - Excellent</button>
+                                    </div>
+                                </div>
+                                
+                                <div class="checklist-section">
+                                    <label>Validation Checklist:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-item">
+                                            <input type="checkbox" id="speciesCorrect">
+                                            Species correctly identified
+                                        </label>
+                                        <label class="checkbox-item">
+                                            <input type="checkbox" id="threatCorrect">
+                                            Threat accurately described
+                                        </label>
+                                        <label class="checkbox-item">
+                                            <input type="checkbox" id="relationshipCorrect">
+                                            Relationship properly characterized
+                                        </label>
+                                        <label class="checkbox-item">
+                                            <input type="checkbox" id="abstractSupports">
+                                            Abstract clearly supports triplet
+                                        </label>
+                                        <label class="checkbox-item">
+                                            <input type="checkbox" id="conservationRelevant">
+                                            Relevant for conservation
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="comments-section">
+                                    <label for="reviewComments">Comments & Suggestions:</label>
+                                    <textarea id="reviewComments" rows="4" placeholder="Provide specific feedback about accuracy, missing context, or suggested improvements..."></textarea>
+                                </div>
+                                
+                                <div class="review-note">
+                                    <p><strong>Note:</strong> This review will be saved under your active session (see above).</p>
+                                </div>
+                                
+                                <div class="form-actions">
+                                    <button id="submitReview" class="submit-btn">Submit Review</button>
+                                    <button id="skipTriplet" class="skip-btn">Skip This Triplet</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="reviewProgress" class="review-progress">
+                    <h3>Review Progress</h3>
+                    <div class="progress-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Reviews Completed:</span>
+                            <span id="reviewsCompleted" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Average Rating:</span>
+                            <span id="averageRating" class="stat-value">-</span>
+                        </div>
                     </div>
                 </div>
             </div>

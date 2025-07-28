@@ -1,25 +1,19 @@
 from flask import Blueprint, jsonify, request
 import config
-from config import ML_LIBS_LOADED, logger
+from config import logger
 from utils import load_data_if_needed, get_triplet_by_id
 
-if ML_LIBS_LOADED:
-    import torch
-    import numpy as np
-    from sklearn.manifold import TSNE
-    from sklearn.decomposition import PCA
-    from sklearn.preprocessing import StandardScaler
-    try:
-        import umap
-        UMAP_AVAILABLE = True
-    except ImportError:
-        UMAP_AVAILABLE = False
+import torch
+import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import umap
 
 api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/load-data', methods=['POST'])
 def manual_load_data():
-    """Manually trigger data loading after file upload"""
     try:
         if load_data_if_needed():
             return jsonify({
@@ -44,7 +38,6 @@ def manual_load_data():
 
 @api_bp.route('/triplets', methods=['GET'])
 def get_all_triplets():
-    """Get all triplets (without embeddings for efficiency)"""
     if not load_data_if_needed():
         return jsonify({"error": "No triplet data loaded, check server logs."}), 500
     
@@ -57,7 +50,6 @@ def get_all_triplets():
 
 @api_bp.route('/similar_threats', methods=['GET'])
 def find_similar_threats():
-    """Find threats similar to a given triplet using cosine similarity"""
     if not config.triplets_data:
         return jsonify({"error": "No triplet data loaded, check server logs."}), 500
         
@@ -68,9 +60,6 @@ def find_similar_threats():
     target_triplet = get_triplet_by_id(target_triplet_id)
     if not target_triplet or target_triplet.get('embedding_tensor') is None:
         return jsonify({"error": "Target triplet not found or has no embedding"}), 404
-
-    if not ML_LIBS_LOADED:
-        return jsonify({"error": "ML libraries not available for similarity computation"}), 500
 
     target_embedding = target_triplet['embedding_tensor']
     
@@ -99,7 +88,6 @@ def find_similar_threats():
 
 @api_bp.route('/threat_embeddings', methods=['GET'])
 def get_threat_embeddings():
-    """Get threat embeddings for visualization"""
     try:
         if not config.triplets_data:
             return jsonify({'success': False, 'error': 'No triplet data loaded'}), 500
@@ -173,11 +161,7 @@ def get_threat_embeddings():
 
 @api_bp.route('/dimensionality_reduction', methods=['POST'])
 def perform_dimensionality_reduction():
-    """Perform dimensionality reduction on embeddings for visualization"""
     try:
-        if not ML_LIBS_LOADED:
-            return jsonify({'success': False, 'error': 'ML libraries not available'}), 500
-        
         data = request.get_json()
         embeddings = data.get('embeddings', [])
         method = data.get('method', 'tsne').lower()
@@ -208,9 +192,6 @@ def perform_dimensionality_reduction():
             reduced_embeddings = tsne.fit_transform(embeddings_scaled)
             
         elif method == 'umap':
-            if not UMAP_AVAILABLE:
-                return jsonify({'success': False, 'error': 'UMAP not available, falling back to t-SNE'}), 400
-            
             n_neighbors = min(data.get('n_neighbors', 15), embeddings_array.shape[0] - 1)
             
             reducer = umap.UMAP(
@@ -243,4 +224,181 @@ def perform_dimensionality_reduction():
         
     except Exception as e:
         logger.error(f"Error in dimensionality reduction: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500 
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api_bp.route('/random-triplet', methods=['GET'])
+def get_random_triplet():
+    try:
+        if not load_data_if_needed():
+            return jsonify({
+                "success": False,
+                "message": "No triplet data loaded"
+            }), 500
+        
+        if not config.triplets_data:
+            return jsonify({
+                "success": False,
+                "message": "No triplets available"
+            }), 500
+        
+        import random
+        import polars as pl
+        from pathlib import Path
+        
+        parquet_path = Path(config.PROJECT_ROOT) / "Lent_Init" / "shorebirds.parquet"
+        logger.info(f"Attempting to load abstracts from: {parquet_path}")
+
+        if not parquet_path.exists():
+            logger.error(f"FATAL: Parquet file not found at expected path: {parquet_path}")
+        
+        random_triplet = None
+        triplet_data = None
+        abstract_found = False
+        
+        if parquet_path.exists():
+            try:
+                df = pl.read_parquet(parquet_path)
+                parquet_dois = set(df['doi'].to_list())
+                
+                triplets_with_abstracts = [
+                    t for t in config.triplets_data 
+                    if t.get('doi', '') in parquet_dois
+                ]
+                
+                if triplets_with_abstracts:
+                    random_triplet = random.choice(triplets_with_abstracts)
+                    logger.info(f"Selected triplet with available abstract: {random_triplet.get('doi')}")
+                else:
+                    random_triplet = random.choice(config.triplets_data)
+                    logger.warning("No triplets with available abstracts, using random triplet")
+                
+                doi = random_triplet.get('doi', '')
+                
+                triplet_data = {
+                    "subject": random_triplet.get('subject', ''),
+                    "predicate": random_triplet.get('predicate', ''),
+                    "object": random_triplet.get('object', ''),
+                    "doi": doi,
+                    "abstract": "",
+                    "title": "",
+                    "id": random_triplet.get('id', '')
+                }
+                
+                if doi:
+                    matching_rows = df.filter(
+                        pl.col("doi").str.to_lowercase() == doi.lower()
+                    )
+                    
+                    if len(matching_rows) > 0:
+                        row = matching_rows.row(0, named=True)
+                        triplet_data["abstract"] = row.get("abstract", "")
+                        triplet_data["title"] = row.get("title", "")
+                        abstract_found = True
+                        logger.info(f"Successfully loaded abstract for DOI: {doi}")
+                    else:
+                        logger.warning(f"No matching row found for DOI: {doi}")
+                        
+            except Exception as e:
+                logger.error(f"Error reading parquet file: {e}")
+                random_triplet = random.choice(config.triplets_data)
+                doi = random_triplet.get('doi', '')
+                triplet_data = {
+                    "subject": random_triplet.get('subject', ''),
+                    "predicate": random_triplet.get('predicate', ''),
+                    "object": random_triplet.get('object', ''),
+                    "doi": doi,
+                    "abstract": "",
+                    "title": "",
+                    "id": random_triplet.get('id', '')
+                }
+        else:
+            random_triplet = random.choice(config.triplets_data)
+            doi = random_triplet.get('doi', '')
+            triplet_data = {
+                "subject": random_triplet.get('subject', ''),
+                "predicate": random_triplet.get('predicate', ''),
+                "object": random_triplet.get('object', ''),
+                "doi": doi,
+                "abstract": "",
+                "title": "",
+                "id": random_triplet.get('id', '')
+            }
+        
+        if triplet_data["abstract"]:
+            import re
+            clean_abstract = re.sub(r'<[^>]+>', '', triplet_data["abstract"])
+            clean_abstract = re.sub(r'\s+', ' ', clean_abstract).strip()
+            triplet_data["abstract"] = clean_abstract
+        
+        if not abstract_found or not triplet_data["abstract"]:
+            try:
+                if parquet_path.exists():
+                    df = pl.read_parquet(parquet_path)
+                    parquet_dois = set(df['doi'].to_list())
+                    matching_triplets = len([t for t in config.triplets_data if t.get('doi', '') in parquet_dois])
+                else:
+                    matching_triplets = 0
+                triplet_data["abstract"] = f"Abstract not available for DOI: {doi}\n\nNote: Only {matching_triplets} out of {len(config.triplets_data)} triplets have abstracts available in the database."
+            except:
+                triplet_data["abstract"] = f"Abstract not available for DOI: {doi}"
+            triplet_data["title"] = "Title not available"
+        
+        return jsonify({
+            "success": True,
+            "triplet": triplet_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting random triplet: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Error: {str(e)}"
+        }), 500
+
+@api_bp.route('/submit-review', methods=['POST'])
+def submit_review():
+    try:
+        review_data = request.get_json()
+        
+        if not review_data:
+            return jsonify({
+                "success": False,
+                "message": "No review data provided"
+            }), 400
+        
+        required_fields = ['triplet', 'rating']
+        for field in required_fields:
+            if field not in review_data:
+                return jsonify({
+                    "success": False,
+                    "message": f"Missing required field: {field}"
+                }), 400
+        
+        import json
+        import os
+        from datetime import datetime
+        
+        reviews_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'reviews')
+        os.makedirs(reviews_dir, exist_ok=True)
+        
+        reviews_file = os.path.join(reviews_dir, 'triplet_reviews.jsonl')
+        review_data['server_timestamp'] = datetime.utcnow().isoformat()        
+        reviewer_info = review_data.get('reviewer', {})
+        reviewer_name = reviewer_info.get('name', 'anonymous')
+        session_id = reviewer_info.get('session_id', 'no_session')        
+        with open(reviews_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(review_data) + '\n')
+        
+        logger.info(f"Review submitted by {reviewer_name} (session: {session_id}) for triplet: {review_data.get('triplet', {}).get('subject', 'unknown')} - Rating: {review_data.get('rating', 'unknown')}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Review submitted successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error submitting review: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Error submitting review: {str(e)}"
+        }), 500 

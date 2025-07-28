@@ -3,7 +3,7 @@ from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import config
 # Import configuration and global state
-from config import logger, ML_LIBS_LOADED
+from config import logger
 
 # Import utilities
 from utils import load_data_if_needed
@@ -37,7 +37,6 @@ def health_check():
         "message": "Climate Analysis API is running",
         "data_loaded": config.data_loaded,
         "triplets_count": len(config.triplets_data) if config.data_loaded else 0,
-        "ml_available": ML_LIBS_LOADED
     })
 
 # Backward compatibility endpoints for frontend
@@ -69,11 +68,6 @@ def load_data():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     logger.info("Starting Climate Analysis Server")
-    
-    if ML_LIBS_LOADED:
-        logger.info("All ML libraries loaded - advanced features available")
-    else:
-        logger.info("ML libraries not available - some features will be disabled")
     
     logger.info("Data will be loaded from cloud storage when accessed")
     logger.info(f"Server running at http://0.0.0.0:{port}")

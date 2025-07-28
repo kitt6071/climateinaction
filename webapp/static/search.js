@@ -17,7 +17,8 @@
                 'profiling': 'profilingTab', 
                 'systemic': 'systemicTab',
                 'knowledge-transfer': 'knowledge-transferTab',
-                'embeddings': 'embeddingsTab'
+                'embeddings': 'embeddingsTab',
+                'review': 'reviewTab'
             };
             
             const tabId = tabMapping[tabName] || tabName;

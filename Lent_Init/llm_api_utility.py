@@ -37,8 +37,9 @@ async def llm_generate(prompt, system, model, temp=0.1, timeout=180, format=None
                 "model": model,
                 "messages": messages,
                 "temperature": temp,
-                "max_tokens": 16000,
+                "max_tokens": 2048,
                 #"require_parameters": True,
+                "provider": {"require_parameters": True},
                 "stream": False  # added for logprobs consistency
             }
             
@@ -331,6 +332,7 @@ def openrouter_generate(prompt, model="google/gemini-2.0-flash-001", system="", 
             "messages": messages,
             "temperature": temp,
             "timeout": timeout,
+            "provider": {"require_parameters": True},
             "stream": False
         }
         
