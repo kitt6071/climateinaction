@@ -191,26 +191,8 @@
                         <h3>Start Review Session</h3>
                         <div class="setup-form">
                             <div class="input-group">
-                                <label for="sessionReviewerName">Your Name/ID:</label>
-                                <input type="text" id="sessionReviewerName" placeholder="Enter your name or reviewer ID" required>
-                            </div>
-                            <div class="input-group">
-                                <label for="sessionExpertise">Your Expertise:</label>
-                                <select id="sessionExpertise" required>
-                                    <option value="">Select your primary area...</option>
-                                    <option value="ornithology">Ornithology</option>
-                                    <option value="marine-biology">Marine Biology</option>
-                                    <option value="conservation-biology">Conservation Biology</option>
-                                    <option value="ecology">Ecology</option>
-                                    <option value="wildlife-management">Wildlife Management</option>
-                                    <option value="taxonomy">Taxonomy</option>
-                                    <option value="environmental-science">Environmental Science</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                            <div class="input-group">
-                                <label for="sessionInstitution">Institution (optional):</label>
-                                <input type="text" id="sessionInstitution" placeholder="University, organization, etc.">
+                                <label for="sessionReviewerName">Your Name:</label>
+                                <input type="text" id="sessionReviewerName" placeholder="Enter your name" required>
                             </div>
                             <button id="startReviewSession" class="start-session-btn">Start Review Session</button>
                         </div>
@@ -222,8 +204,6 @@
                             <div class="reviewer-info">
                                 <span class="reviewer-label">Reviewer:</span>
                                 <span id="activeReviewerName" class="reviewer-name">-</span>
-                                <span class="expertise-label">Expertise:</span>
-                                <span id="activeExpertise" class="expertise-value">-</span>
                             </div>
                             <div class="session-actions">
                                 <button id="loadRandomTriplet" class="load-data-btn">Load Random Triplet</button>
@@ -236,7 +216,6 @@
                 
                 <div id="tripletReviewSection" class="triplet-review-section" style="display: none;">
                     <div class="review-layout">
-                        <!-- Left side: Abstract and DOI -->
                         <div class="abstract-panel">
                             <div class="doi-section">
                                 <h3>Source Publication</h3>
@@ -261,28 +240,13 @@
                             </div>
                         </div>
                         
-                        <!-- Right side: Triplet and Review Form -->
                         <div class="review-panel">
-                            <div class="triplet-display">
-                                <h3>Extracted Triplet</h3>
-                                <div class="triplet-breakdown">
-                                    <div class="triplet-component">
-                                        <label>Subject (Species):</label>
-                                        <div id="reviewSubject" class="triplet-value">-</div>
-                                    </div>
-                                    <div class="triplet-component">
-                                        <label>Predicate (Relationship):</label>
-                                        <div id="reviewPredicate" class="triplet-value">-</div>
-                                    </div>
-                                    <div class="triplet-component">
-                                        <label>Object (Threat):</label>
-                                        <div id="reviewObject" class="triplet-value">-</div>
-                                    </div>
-                                </div>
+                            <h3>Extracted Triplets</h3>
+                            <div id="tripletDisplay" class="triplet-display-list">
                             </div>
-                            
+
                             <div class="review-form">
-                                <h3>Expert Review</h3>
+                                <h3>Reviewer's Comments (for the entire set)</h3>
                                 
                                 <div class="rating-section">
                                     <label>Overall Accuracy:</label>
@@ -316,7 +280,11 @@
                                         </label>
                                         <label class="checkbox-item">
                                             <input type="checkbox" id="conservationRelevant">
-                                            Relevant for conservation
+                                            Relevant for species threats analysis
+                                        </label>
+                                        <label class="checkbox-item">
+                                            <input type="checkbox" id="allThreatRelationships">
+                                            All relationships in the abstract are covered by the triplets
                                         </label>
                                     </div>
                                 </div>

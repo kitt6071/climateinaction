@@ -1,7 +1,13 @@
+import random
 from flask import Blueprint, jsonify, request
 import config
 from config import logger
 from utils import load_data_if_needed, get_triplet_by_id
+import os
+import polars as pl
+from pathlib import Path
+from datetime import datetime
+import json
 
 import torch
 import numpy as np
@@ -229,89 +235,47 @@ def perform_dimensionality_reduction():
 @api_bp.route('/random-triplet', methods=['GET'])
 def get_random_triplet():
     try:
-        if not load_data_if_needed():
-            return jsonify({
-                "success": False,
-                "message": "No triplet data loaded"
-            }), 500
+        if not load_data_if_needed() or config.abstracts_df is None or not config.triplets_data:
+            return jsonify({"success": False, "message": "Data not loaded or unavailable."}), 500
+
+        abstract_dois = set(config.abstracts_df['doi_lower'].to_list())
+        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data}
+        valid_dois = list(abstract_dois.intersection(triplet_dois))
+
+        if not valid_dois:
+            return jsonify({"success": False, "message": "No matching DOIs found between abstracts and triplets."}), 404
+
+        selected_doi_lower = random.choice(valid_dois)
         
-        if not config.triplets_data:
-            return jsonify({
-                "success": False,
-                "message": "No triplets available"
-            }), 500
+        abstract_row = config.abstracts_df.filter(pl.col("doi_lower") == selected_doi_lower).row(0, named=True)
         
-        import random
-        import polars as pl
-        from pathlib import Path
-        
-        random_triplet = None
-        triplet_data = None
-        abstract_found = False
-        
-        random_triplet = random.choice(config.triplets_data)
-        doi = random_triplet.get('doi', '')
-        
-        triplet_data = {
-            "subject": random_triplet.get('subject', ''),
-            "predicate": random_triplet.get('predicate', ''),
-            "object": random_triplet.get('object', ''),
-            "doi": doi,
-            "abstract": "",
-            "title": "",
-            "id": random_triplet.get('id', '')
-        }
-        
-        # Look up abstract from pre-loaded DataFrame
-        if config.abstracts_df is not None and doi:
-            try:
-                matching_rows = config.abstracts_df.filter(
-                    pl.col("doi_lower") == doi.lower()
-                )
-                
-                if len(matching_rows) > 0:
-                    row = matching_rows.row(0, named=True)
-                    triplet_data["abstract"] = row.get("abstract", "")
-                    triplet_data["title"] = row.get("title", "")
-                    abstract_found = True
-                    logger.info(f"Successfully loaded abstract for DOI: {doi} from memory.")
-                else:
-                    logger.warning(f"No matching abstract found in memory for DOI: {doi}")
-            except Exception as e:
-                logger.error(f"Error looking up abstract in memory: {e}")
-        else:
-            logger.warning("Abstracts DataFrame not loaded, cannot look up DOI.")
-        
-        if triplet_data["abstract"]:
+        associated_triplets = [
+            {k: v for k, v in t.items() if k != 'embedding_tensor'}
+            for t in config.triplets_data 
+            if t.get('doi', '').lower().strip() == selected_doi_lower
+        ]
+
+        abstract_text = abstract_row.get("abstract", "")
+        if abstract_text:
             import re
-            clean_abstract = re.sub(r'<[^>]+>', '', triplet_data["abstract"])
-            clean_abstract = re.sub(r'\s+', ' ', clean_abstract).strip()
-            triplet_data["abstract"] = clean_abstract
-        
-        if not abstract_found or not triplet_data["abstract"]:
-            try:
-                if parquet_path.exists():
-                    df = pl.read_parquet(parquet_path)
-                    parquet_dois = set(df['doi'].to_list())
-                    matching_triplets = len([t for t in config.triplets_data if t.get('doi', '') in parquet_dois])
-                else:
-                    matching_triplets = 0
-                triplet_data["abstract"] = f"Abstract not available for DOI: {doi}\n\nNote: Only {matching_triplets} out of {len(config.triplets_data)} triplets have abstracts available in the database."
-            except:
-                triplet_data["abstract"] = f"Abstract not available for DOI: {doi}"
-            triplet_data["title"] = "Title not available"
+            abstract_text = re.sub(r'<[^>]+>', '', abstract_text).strip()
+            abstract_text = re.sub(r'\s+', ' ', abstract_text).strip()
+
+        response_data = {
+            "doi": abstract_row.get("doi"),
+            "title": abstract_row.get("title", "Title not available"),
+            "abstract": abstract_text,
+            "triplets": associated_triplets
+        }
         
         return jsonify({
             "success": True,
-            "triplet": triplet_data
+            "group": response_data
         })
         
     except Exception as e:
-        logger.error(f"Error getting random triplet: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Error: {str(e)}"
-        }), 500
+        logger.error(f"Error getting random triplet group: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
 
 @api_bp.route('/submit-review', methods=['POST'])
 def submit_review():
@@ -319,44 +283,31 @@ def submit_review():
         review_data = request.get_json()
         
         if not review_data:
-            return jsonify({
-                "success": False,
-                "message": "No review data provided"
-            }), 400
+            return jsonify({"success": False, "message": "No review data provided"}), 400
         
-        required_fields = ['triplet', 'rating']
-        for field in required_fields:
-            if field not in review_data:
-                return jsonify({
-                    "success": False,
-                    "message": f"Missing required field: {field}"
-                }), 400
+        required_fields = ['group_doi', 'triplets', 'rating', 'validation', 'reviewer']
+        if not all(field in review_data for field in required_fields):
+            return jsonify({"success": False, "message": "Missing required fields for group review"}), 400
         
-        import json
-        import os
-        from datetime import datetime
+        if not isinstance(review_data['triplets'], list) or len(review_data['triplets']) == 0:
+            return jsonify({"success": False, "message": "Triplets must be a non-empty list"}), 400
+            
+        review_data['server_timestamp'] = datetime.utcnow().isoformat()
         
-        reviews_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'reviews')
+        reviews_dir = os.path.join(config.PROJECT_ROOT, "data", "reviews")
         os.makedirs(reviews_dir, exist_ok=True)
         
-        reviews_file = os.path.join(reviews_dir, 'triplet_reviews.jsonl')
-        review_data['server_timestamp'] = datetime.utcnow().isoformat()        
-        reviewer_info = review_data.get('reviewer', {})
-        reviewer_name = reviewer_info.get('name', 'anonymous')
-        session_id = reviewer_info.get('session_id', 'no_session')        
-        with open(reviews_file, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(review_data) + '\n')
+        file_path = os.path.join(reviews_dir, "triplet_reviews.jsonl")
         
-        logger.info(f"Review submitted by {reviewer_name} (session: {session_id}) for triplet: {review_data.get('triplet', {}).get('subject', 'unknown')} - Rating: {review_data.get('rating', 'unknown')}")
+        with open(file_path, 'a') as f:
+            f.write(json.dumps(review_data) + '\\n')
         
-        return jsonify({
-            "success": True,
-            "message": "Review submitted successfully"
-        })
+        reviewer_name = review_data.get('reviewer', {}).get('name', 'Anonymous')
+        session_id = review_data.get('reviewer', {}).get('session_id', 'N/A')
+        logger.info(f"Review for DOI {review_data['group_doi']} by {reviewer_name} (Session: {session_id}) saved to {file_path}")
+        
+        return jsonify({"success": True, "message": "Review submitted successfully"})
         
     except Exception as e:
-        logger.error(f"Error submitting review: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Error submitting review: {str(e)}"
-        }), 500 
+        logger.error(f"Error submitting review: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500 

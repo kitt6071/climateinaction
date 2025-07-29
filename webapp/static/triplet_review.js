@@ -4,6 +4,7 @@ let reviewProgress = {
     totalRating: 0
 };
 let reviewSession = null;
+let currentGroup = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, checking for review elements...');
@@ -63,10 +64,10 @@ function initializeReviewSystem() {
     endBtn.addEventListener('click', endSession);
     loadBtn.addEventListener('click', loadRandomTriplet);
     
-    const ratingButtons = document.querySelectorAll('.rating-btn');
-    ratingButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            selectRating(this.dataset.rating);
+    document.querySelectorAll('.rating-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const rating = parseInt(button.dataset.rating, 10);
+            selectRating(rating);
         });
     });
     
@@ -82,73 +83,69 @@ function initializeReviewSystem() {
 }
 
 async function loadRandomTriplet() {
-    const button = document.getElementById('loadRandomTriplet');
     const status = document.getElementById('reviewStatus');
-    
-    button.textContent = '⏳ Loading...';
-    button.disabled = true;
-    status.textContent = 'Fetching random triplet...';
+    status.textContent = 'Loading new triplet group...';
     
     try {
         const response = await fetch('/api/random-triplet');
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
         }
         
         const data = await response.json();
         
         if (data.success) {
-            currentTriplet = data.triplet;
-            displayTriplet(data.triplet);
-            status.textContent = `Loaded triplet from ${data.triplet.doi}`;
+            currentGroup = data.group;
+            displayTripletGroup(data.group);
+            status.textContent = `Loaded ${data.group.triplets.length} triplets from ${data.group.doi}`;
         } else {
-            throw new Error(data.message || 'Failed to load triplet');
+            throw new Error(data.message || 'Failed to load triplet group');
         }
         
     } catch (error) {
-        console.error('Error loading random triplet:', error);
+        console.error('Error loading random triplet group:', error);
         status.textContent = `Error: ${error.message}`;
-        
-        const localData = window.AppState?.allTripletsData || window.triplets;
-        console.log('API failed, checking local data. Available triplets:', localData ? localData.length : 'undefined');
-        if (localData && localData.length > 0) {
-            const randomIndex = Math.floor(Math.random() * localData.length);
-            const triplet = localData[randomIndex];
-            console.log('Selected random triplet:', triplet);
-            
-            currentTriplet = {
-                subject: triplet.subject,
-                predicate: triplet.predicate,
-                object: triplet.object,
-                doi: triplet.doi,
-                abstract: triplet.abstract || triplet.threat_sentence || "Abstract not available in local data."
-            };
-            displayTriplet(currentTriplet);
-            status.textContent = 'Loaded triplet from local data';
-        } else {
-            status.textContent = 'Unable to load triplet. Please load data first using the "Load Data from Cloud" button.';
-        }
     }
-    
-    button.textContent = 'Load Random Triplet';
-    button.disabled = false;
 }
 
-function displayTriplet(triplet) {
+function displayTripletGroup(group) {
     document.getElementById('tripletReviewSection').style.display = 'block';
     
     const doiElement = document.getElementById('reviewDOI');
-    doiElement.textContent = triplet.doi;
-    doiElement.href = `https://doi.org/${triplet.doi}`;
+    doiElement.textContent = group.doi;
+    doiElement.href = `https://doi.org/${group.doi}`;
+    document.getElementById('reviewTitle').textContent = group.title || 'Title not available';
     
-    document.getElementById('reviewTitle').textContent = triplet.title || 'Title not available';
+    document.getElementById('reviewAbstract').textContent = group.abstract || 'Abstract not available';
     
-    document.getElementById('reviewAbstract').textContent = triplet.abstract || 'Abstract not available';
+    const displayContainer = document.getElementById('tripletDisplay');
+    displayContainer.innerHTML = '';
     
-    document.getElementById('reviewSubject').textContent = triplet.subject;
-    document.getElementById('reviewPredicate').textContent = triplet.predicate;
-    document.getElementById('reviewObject').textContent = triplet.object;
+    if (group.triplets && group.triplets.length > 0) {
+        group.triplets.forEach((triplet, index) => {
+            const tripletEl = document.createElement('div');
+            tripletEl.className = 'triplet-item';
+            tripletEl.dataset.tripletId = triplet.id; 
+
+            tripletEl.innerHTML = `
+                <div class="triplet-item-number">${index + 1}</div>
+                <div class="triplet-item-content">
+                    <div class="triplet-component"><strong>Subject:</strong> ${triplet.subject}</div>
+                    <div class="triplet-component"><strong>Predicate:</strong> ${triplet.predicate}</div>
+                    <div class="triplet-component"><strong>Object:</strong> ${triplet.object}</div>
+                </div>
+                <div class="triplet-validation-control">
+                    <input type="checkbox" id="triplet-valid-${triplet.id}" class="triplet-valid-checkbox" checked>
+                    <label for="triplet-valid-${triplet.id}">Valid</label>
+                </div>
+            `;
+            displayContainer.appendChild(tripletEl);
+        });
+    } else {
+        displayContainer.innerHTML = '<div class="triplet-item-content">No triplets found for this abstract.</div>';
+    }
     
     resetReviewForm();
     
@@ -161,11 +158,10 @@ function displayTriplet(triplet) {
 function selectRating(rating) {
     document.querySelectorAll('.rating-btn').forEach(btn => {
         btn.classList.remove('selected');
+        if (parseInt(btn.dataset.rating, 10) === rating) {
+            btn.classList.add('selected');
+        }
     });
-    
-    document.querySelector(`[data-rating="${rating}"]`).classList.add('selected');
-    
-    currentTriplet.rating = parseInt(rating);
 }
 
 function resetReviewForm() {
@@ -185,24 +181,33 @@ function resetReviewForm() {
 }
 
 async function submitReview() {
-    if (!currentTriplet) {
-        alert('No triplet loaded for review');
+    if (!currentGroup) {
+        alert('No triplet group loaded for review');
         return;
     }
     
-    if (!currentTriplet.rating) {
+    const ratingElement = document.querySelector('.rating-btn.selected');
+    if (!ratingElement) {
         alert('Please select an overall accuracy rating');
         return;
     }
-    
+    const overallRating = parseInt(ratingElement.dataset.rating, 10);
+
     const reviewData = {
-        triplet: {
-            subject: currentTriplet.subject,
-            predicate: currentTriplet.predicate,
-            object: currentTriplet.object,
-            doi: currentTriplet.doi
-        },
-        rating: currentTriplet.rating,
+        group_doi: currentGroup.doi,
+        triplets: currentGroup.triplets.map(t => {
+            const tripletItemEl = document.querySelector(`.triplet-item[data-triplet-id="${t.id}"]`);
+            const isValid = tripletItemEl ? tripletItemEl.querySelector('.triplet-valid-checkbox').checked : true;
+            
+            return {
+                subject: t.subject,
+                predicate: t.predicate,
+                object: t.object,
+                id: t.id,
+                isValid: isValid
+            };
+        }),
+        rating: overallRating,
         validation: {
             speciesCorrect: document.getElementById('speciesCorrect').checked,
             threatCorrect: document.getElementById('threatCorrect').checked,
@@ -213,8 +218,6 @@ async function submitReview() {
         comments: document.getElementById('reviewComments').value.trim(),
         reviewer: reviewSession ? {
             name: reviewSession.name,
-            expertise: reviewSession.expertise,
-            institution: reviewSession.institution,
             session_id: reviewSession.id
         } : {
             name: 'Anonymous',
@@ -335,24 +338,15 @@ function exportReviews() {
 // Session Management Functions
 function startSession() {
     const name = document.getElementById('sessionReviewerName').value.trim();
-    const expertise = document.getElementById('sessionExpertise').value;
-    const institution = document.getElementById('sessionInstitution').value.trim();
     
     if (!name) {
         alert('Please enter your name or reviewer ID');
         return;
     }
     
-    if (!expertise) {
-        alert('Please select your area of expertise');
-        return;
-    }
-    
     reviewSession = {
         id: generateSessionId(),
         name: name,
-        expertise: expertise,
-        institution: institution,
         startTime: new Date().toISOString(),
         reviews: 0
     };
@@ -380,8 +374,6 @@ function endSession() {
     document.getElementById('tripletReviewSection').style.display = 'none';
     
     document.getElementById('sessionReviewerName').value = '';
-    document.getElementById('sessionExpertise').value = '';
-    document.getElementById('sessionInstitution').value = '';
     
     document.getElementById('reviewStatus').textContent = 
         `Session ended for ${sessionName}. Completed ${reviewCount} reviews. Thank you!`;
@@ -414,11 +406,9 @@ function updateSessionUI() {
         document.getElementById('activeSession').style.display = 'block';
         
         document.getElementById('activeReviewerName').textContent = reviewSession.name;
-        document.getElementById('activeExpertise').textContent = reviewSession.expertise;
         
-        const institution = reviewSession.institution ? ` (${reviewSession.institution})` : '';
         document.getElementById('reviewStatus').textContent = 
-            `Session active for ${reviewSession.name}${institution}. Click "Load Random Triplet" to start reviewing.`;
+            `Session active for ${reviewSession.name}. Click "Load Random Triplet" to start reviewing.`;
     } else {
         document.getElementById('reviewerSetup').style.display = 'block';
         document.getElementById('activeSession').style.display = 'none';
