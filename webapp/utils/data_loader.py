@@ -4,10 +4,11 @@ import requests
 import logging
 import config
 from config import (
-    DATA_SOURCES, DATA_PATH, initialize_analyzer
+    DATA_SOURCES, DATA_PATH, PARQUET_SOURCES, PARQUET_PATH, initialize_analyzer
 )
 
 import torch
+import polars as pl
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,6 @@ def load_data_if_needed():
         initialize_analyzer()
         
         config.data_loaded = True
-        return True
-        
     except FileNotFoundError:
         logger.error(f"Data file not found: {data_file_path}")
         return False
@@ -88,6 +87,38 @@ def load_data_if_needed():
     except Exception as e:
         logger.error(f"Error loading data: {e}")
         return False
+
+    if not config.parquet_loaded:
+        parquet_file_path = None
+        for source in PARQUET_SOURCES:
+            if source.startswith("http"):
+                logger.info(f"Attempting to download parquet from {source}")
+                if download_data_from_url(source, PARQUET_PATH):
+                    parquet_file_path = PARQUET_PATH
+                    logger.info(f"Successfully downloaded parquet data from cloud storage")
+                    break
+            else:
+                if os.path.exists(source):
+                    parquet_file_path = source
+                    logger.info(f"Found local parquet file at {parquet_file_path}")
+                    break
+        
+        if parquet_file_path:
+            try:
+                logger.info(f"Loading abstracts from {parquet_file_path}...")
+                config.abstracts_df = pl.read_parquet(parquet_file_path)
+                # Pre-process DOIs for faster lookups
+                config.abstracts_df = config.abstracts_df.with_columns(
+                    pl.col("doi").str.to_lowercase().alias("doi_lower")
+                )
+                config.parquet_loaded = True
+                logger.info(f"Parquet data loaded: {len(config.abstracts_df)} abstracts available.")
+            except Exception as e:
+                logger.error(f"Error loading parquet file {parquet_file_path}: {e}")
+        else:
+            logger.error("No parquet data file found from any source.")
+
+    return config.data_loaded
 
 def load_data_chunked(file_path=DATA_PATH, chunk_size=500):
     #Loads data in chunks from a JSON file to be more memory-efficient.

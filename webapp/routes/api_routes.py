@@ -245,84 +245,42 @@ def get_random_triplet():
         import polars as pl
         from pathlib import Path
         
-        parquet_path = Path(config.PROJECT_ROOT) / "Lent_Init" / "shorebirds.parquet"
-        logger.info(f"Attempting to load abstracts from: {parquet_path}")
-
-        if not parquet_path.exists():
-            logger.error(f"FATAL: Parquet file not found at expected path: {parquet_path}")
-        
         random_triplet = None
         triplet_data = None
         abstract_found = False
         
-        if parquet_path.exists():
+        random_triplet = random.choice(config.triplets_data)
+        doi = random_triplet.get('doi', '')
+        
+        triplet_data = {
+            "subject": random_triplet.get('subject', ''),
+            "predicate": random_triplet.get('predicate', ''),
+            "object": random_triplet.get('object', ''),
+            "doi": doi,
+            "abstract": "",
+            "title": "",
+            "id": random_triplet.get('id', '')
+        }
+        
+        # Look up abstract from pre-loaded DataFrame
+        if config.abstracts_df is not None and doi:
             try:
-                df = pl.read_parquet(parquet_path)
-                parquet_dois = set(df['doi'].to_list())
+                matching_rows = config.abstracts_df.filter(
+                    pl.col("doi_lower") == doi.lower()
+                )
                 
-                triplets_with_abstracts = [
-                    t for t in config.triplets_data 
-                    if t.get('doi', '') in parquet_dois
-                ]
-                
-                if triplets_with_abstracts:
-                    random_triplet = random.choice(triplets_with_abstracts)
-                    logger.info(f"Selected triplet with available abstract: {random_triplet.get('doi')}")
+                if len(matching_rows) > 0:
+                    row = matching_rows.row(0, named=True)
+                    triplet_data["abstract"] = row.get("abstract", "")
+                    triplet_data["title"] = row.get("title", "")
+                    abstract_found = True
+                    logger.info(f"Successfully loaded abstract for DOI: {doi} from memory.")
                 else:
-                    random_triplet = random.choice(config.triplets_data)
-                    logger.warning("No triplets with available abstracts, using random triplet")
-                
-                doi = random_triplet.get('doi', '')
-                
-                triplet_data = {
-                    "subject": random_triplet.get('subject', ''),
-                    "predicate": random_triplet.get('predicate', ''),
-                    "object": random_triplet.get('object', ''),
-                    "doi": doi,
-                    "abstract": "",
-                    "title": "",
-                    "id": random_triplet.get('id', '')
-                }
-                
-                if doi:
-                    matching_rows = df.filter(
-                        pl.col("doi").str.to_lowercase() == doi.lower()
-                    )
-                    
-                    if len(matching_rows) > 0:
-                        row = matching_rows.row(0, named=True)
-                        triplet_data["abstract"] = row.get("abstract", "")
-                        triplet_data["title"] = row.get("title", "")
-                        abstract_found = True
-                        logger.info(f"Successfully loaded abstract for DOI: {doi}")
-                    else:
-                        logger.warning(f"No matching row found for DOI: {doi}")
-                        
+                    logger.warning(f"No matching abstract found in memory for DOI: {doi}")
             except Exception as e:
-                logger.error(f"Error reading parquet file: {e}")
-                random_triplet = random.choice(config.triplets_data)
-                doi = random_triplet.get('doi', '')
-                triplet_data = {
-                    "subject": random_triplet.get('subject', ''),
-                    "predicate": random_triplet.get('predicate', ''),
-                    "object": random_triplet.get('object', ''),
-                    "doi": doi,
-                    "abstract": "",
-                    "title": "",
-                    "id": random_triplet.get('id', '')
-                }
+                logger.error(f"Error looking up abstract in memory: {e}")
         else:
-            random_triplet = random.choice(config.triplets_data)
-            doi = random_triplet.get('doi', '')
-            triplet_data = {
-                "subject": random_triplet.get('subject', ''),
-                "predicate": random_triplet.get('predicate', ''),
-                "object": random_triplet.get('object', ''),
-                "doi": doi,
-                "abstract": "",
-                "title": "",
-                "id": random_triplet.get('id', '')
-            }
+            logger.warning("Abstracts DataFrame not loaded, cannot look up DOI.")
         
         if triplet_data["abstract"]:
             import re

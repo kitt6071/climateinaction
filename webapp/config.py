@@ -11,6 +11,12 @@ DATA_SOURCES = [
 ]
 DATA_PATH = "data_with_embeddings.json"
 
+PARQUET_SOURCES = [
+    os.path.join(PROJECT_ROOT, "Lent_Init/shorebirds.parquet"),
+    "https://storage.googleapis.com/climateinaction/shorebirds.parquet"
+]
+PARQUET_PATH = "shorebirds.parquet"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -45,10 +51,12 @@ except ImportError:
     UMAP_AVAILABLE = False
 
 triplets_data = []
+abstracts_df = None
 enhanced_kg = None
 kg_results = None
 analyzer = None
 data_loaded = False
+parquet_loaded = False
 
 def initialize_analyzer():
     global analyzer
