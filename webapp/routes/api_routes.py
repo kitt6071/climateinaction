@@ -294,7 +294,7 @@ def submit_review():
             
         review_data['server_timestamp'] = datetime.utcnow().isoformat()
         
-        reviews_dir = os.path.join(config.PROJECT_ROOT, "data", "reviews")
+        reviews_dir = "/webapp/data/reviews"
         os.makedirs(reviews_dir, exist_ok=True)
         
         file_path = os.path.join(reviews_dir, "triplet_reviews.jsonl")
