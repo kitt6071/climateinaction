@@ -185,3 +185,86 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
         print("Bird taxonomies saved to llm_bird_taxonomies.json")
     else:
         print("No bird taxonomies to save")
+
+async def classify_threat_for_subject(subject: str, predicate: str, obj: str, llm_setup, cache: SimpleCache) -> Optional[dict]:
+    cache_key = f"threat_sentiment_for_subject:{subject}|{predicate}|{obj}"
+    cached_result = cache.get(cache_key)
+    if cached_result:
+        logger.info(f"Threat sentiment cache hit for: {subject}|{predicate}|{obj}")
+        classification = cached_result.get("classification")
+        if classification in ["negative", "very negative"]:
+            return cached_result
+        else:
+            return None
+
+    logger.info(f"Classifying threat sentiment for: {subject}|{predicate}|{obj}")
+
+    classification_schema = {
+        "type": "object",
+        "properties": {
+            "classification": {
+                "type": "string",
+                "enum": ["very positive", "positive", "neutral", "negative", "very negative"],
+                "description": "The sentiment of the interaction from the perspective of the subject species.",
+            },
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+        },
+        "required": ["classification", "confidence"],
+    }
+
+    system_prompt = """
+You are an ecologist analyzing species interactions. Classify the sentiment of the interaction from the perspective of the **subject** species.
+
+    Use the following categories:
+    - **very negative**: The subject is directly and severely threatened by the interaction (e.g., high mortality from a predator or disease).
+    - **negative**: The subject is negatively impacted, but not necessarily severely (e.g., competition for resources).
+    - **neutral**: No clear benefit or detriment (e.g., simple co-occurrence).
+    - **positive**: The interaction is clearly beneficial for the subject and does not suggest it is a threat to others (e.g., finding a food source, successful nesting). The interaction is beneficial for the subject, but in a way that makes the subject a threat to its environment or other species. For example, a species' population exploding due to a new food source, which in turn harms the ecosystem.
+    - **very positive**: Strong benefit (e.g., essential food source, successful nesting).
+    Return a JSON object with your classification and confidence.
+    """
+
+    prompt = f"""
+Analyze the following ecological interaction:
+
+- **Subject (species of interest)**: {subject}
+- **Predicate (the interaction)**: {predicate}
+- **Object (what the subject interacts with)**: {obj}
+
+    Example: If the subject is "Shorebirds", the predicate is "population increase", and the object is "due to algae blooms", the classification should be **"positive"** because while the population increase is good for the shorebirds, it indicates a potential ecological imbalance where they might be contributing to a problem.
+
+    Based on the information, what is the threat direction for the **subject**?
+    """
+
+    response_result = await llm_generate(
+        prompt=prompt,
+        system=system_prompt,
+        model=llm_setup.get("model", "qwen/qwen-long"),
+        temp=0.1,
+        format=classification_schema,
+        llm_setup=llm_setup,
+    )
+
+    response_str = extract_content_from_result(response_result)
+    if response_str:
+        try:
+            result_json = json.loads(response_str)
+            classification = result_json.get("classification")
+            confidence = result_json.get("confidence")
+
+            if classification and isinstance(confidence, (int, float)):
+                result = {"classification": classification, "confidence": confidence}
+                cache.set(cache_key, result)
+                logger.info(f"Threat sentiment for '{subject}|{predicate}|{obj}' classified as '{classification}' with confidence {confidence}")
+
+                if classification in ["negative", "very negative", "neutral"]:
+                    return result
+                else:
+                    return None
+
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Failed to decode or parse threat sentiment JSON: {e}. Response: '{response_str}'")
+
+    fallback_result = {"classification": "neutral", "confidence": 0.0}
+    cache.set(cache_key, fallback_result)
+    return None
