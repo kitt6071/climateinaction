@@ -199,13 +199,19 @@ async function submitReview() {
         alert('No triplet group loaded for review');
         return;
     }
-    
-    const ratingElement = document.querySelector('.rating-btn.selected');
-    if (!ratingElement) {
-        alert('Please select an overall accuracy rating');
+
+    if (!reviewSession || !reviewSession.name) {
+        alert("Please start a review session first.");
+        document.getElementById('startReviewBtn').focus();
         return;
     }
-    const overallRating = parseInt(ratingElement.dataset.rating, 10);
+
+    // No longer needed since rating is removed.
+    // const overallRating = document.querySelector('.rating-btn.selected') ? document.querySelector('.rating-btn.selected').dataset.rating : null;
+    // if (!overallRating) {
+    //     alert("Please select an overall accuracy rating.");
+    //     return;
+    // }
 
     const reviewData = {
         group_doi: currentGroup.doi,

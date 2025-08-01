@@ -3079,3 +3079,7 @@ footer {
     padding-bottom: 15px;
     border-bottom: 1px solid #eee;
 }
+
+.triplet-component strong {
+    margin-right: 0.5rem;
+}
