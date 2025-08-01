@@ -2577,25 +2577,26 @@ footer {
 }
 
 .triplet-component {
-    margin-bottom: 15px;
-    padding: 12px;
-    background: #f8f9fa;
-    border-left: 4px solid #007bff;
-    border-radius: 4px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 1rem;
+    padding: 0.5rem;
+    border-bottom: 1px solid #f1f3f5;
 }
 
-.triplet-component label {
-    font-weight: bold;
+.triplet-text {
+    text-align: left;
+}
+
+.triplet-text span {
+    word-break: break-word;
+}
+
+.triplet-component strong {
+    font-weight: 600;
     color: #495057;
-    display: block;
-    margin-bottom: 5px;
-    font-size: 0.9em;
-}
-
-.triplet-value {
-    color: #212529;
-    font-size: 1.1em;
-    line-height: 1.4;
+    margin-right: 0.5rem;
 }
 
 .review-form h3 {

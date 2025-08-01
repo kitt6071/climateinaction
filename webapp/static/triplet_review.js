@@ -133,21 +133,21 @@ function displayTripletGroup(group) {
                 <div class="triplet-item-number">${index + 1}</div>
                 <div class="triplet-item-content">
                     <div class="triplet-component">
-                        <strong>Subject:</strong> ${triplet.subject}
+                        <div class="triplet-text"><strong>Subject:</strong> <span>${triplet.subject}</span></div>
                         <div class="triplet-validation-control">
                             <input type="checkbox" id="triplet-${triplet.id}-subject-valid" class="triplet-component-valid-checkbox" data-part="subject" checked>
                             <label for="triplet-${triplet.id}-subject-valid">Valid</label>
                         </div>
                     </div>
                     <div class="triplet-component">
-                        <strong>Predicate:</strong> ${triplet.predicate}
+                        <div class="triplet-text"><strong>Predicate:</strong> <span>${triplet.predicate}</span></div>
                         <div class="triplet-validation-control">
                             <input type="checkbox" id="triplet-${triplet.id}-predicate-valid" class="triplet-component-valid-checkbox" data-part="predicate" checked>
                             <label for="triplet-${triplet.id}-predicate-valid">Valid</label>
                         </div>
                     </div>
                     <div class="triplet-component">
-                        <strong>Object:</strong> ${triplet.object}
+                        <div class="triplet-text"><strong>Object:</strong> <span>${triplet.object}</span></div>
                         <div class="triplet-validation-control">
                             <input type="checkbox" id="triplet-${triplet.id}-object-valid" class="triplet-component-valid-checkbox" data-part="object" checked>
                             <label for="triplet-${triplet.id}-object-valid">Valid</label>
@@ -302,9 +302,6 @@ function updateProgress(rating) {
     reviewProgress.totalRating += rating;
     
     document.getElementById('reviewsCompleted').textContent = reviewProgress.completed;
-    document.getElementById('averageRating').textContent = 
-        (reviewProgress.totalRating / reviewProgress.completed).toFixed(1);
-    
     saveProgress();
 }
 

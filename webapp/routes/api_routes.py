@@ -9,6 +9,8 @@ from pathlib import Path
 from datetime import datetime
 import json
 
+import csv
+from io import StringIO
 import torch
 import numpy as np
 from sklearn.manifold import TSNE
@@ -285,9 +287,10 @@ def submit_review():
         if not review_data:
             return jsonify({"success": False, "message": "No review data provided"}), 400
         
-        required_fields = ['group_doi', 'triplets', 'rating', 'validation', 'reviewer']
+        required_fields = ['group_doi', 'triplets', 'comments', 'reviewer']
         if not all(field in review_data for field in required_fields):
-            return jsonify({"success": False, "message": "Missing required fields for group review"}), 400
+            missing_fields = [field for field in required_fields if field not in review_data]
+            return jsonify({"success": False, "message": f"Missing required fields: {', '.join(missing_fields)}"}), 400
         
         if not isinstance(review_data['triplets'], list) or len(review_data['triplets']) == 0:
             return jsonify({"success": False, "message": "Triplets must be a non-empty list"}), 400
@@ -319,9 +322,6 @@ def export_reviews():
         
         if not os.path.exists(reviews_file_path):
             return "No reviews found to export.", 404
-
-        import csv
-        from io import StringIO
 
         output = StringIO()
         writer = csv.writer(output)
