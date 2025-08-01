@@ -315,6 +315,19 @@ def submit_review():
         logger.error(f"Error submitting review: {e}", exc_info=True)
         return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500 
 
+@api_bp.route('/reviews/stats', methods=['GET'])
+def get_review_stats():
+    try:
+        reviews_file_path = "/webapp/data/reviews/triplet_reviews.jsonl"
+        count = 0
+        if os.path.exists(reviews_file_path):
+            with open(reviews_file_path, 'r') as f:
+                count = sum(1 for line in f if line.strip())
+        return jsonify({"success": True, "reviews_completed": count})
+    except Exception as e:
+        logger.error(f"Error getting review stats: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"Error getting stats: {str(e)}"}), 500
+
 @api_bp.route('/clear-reviews', methods=['POST'])
 def clear_reviews():
     try:

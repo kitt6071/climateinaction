@@ -259,13 +259,19 @@ async function submitReview() {
             body: JSON.stringify(reviewData)
         });
         
-        if (response.ok) {
-            console.log('Review submitted to backend');
+        const result = await response.json();
+
+        if (result.success) {
+            alert("Review submitted successfully!");
+            document.getElementById('reviewComments').value = '';
+            loadRandomTriplet();
+            updateReviewProgress();
         } else {
-            console.log('Backend not available, storing locally');
+            alert(`Submission failed: ${result.message}`);
         }
     } catch (error) {
-        console.log('Backend not available, storing locally:', error.message);
+        console.error("Error submitting review:", error);
+        alert("An error occurred during submission. See console for details.");
     }
     
     storeReviewLocally(reviewData);
@@ -462,9 +468,18 @@ submitReview = async function() {
     }
 };
 
-function updateReviewProgress() {
-    const savedReviews = JSON.parse(localStorage.getItem('tripletReviews')) || [];
-    document.getElementById('reviewsCompleted').textContent = savedReviews.length;
+async function updateReviewProgress() {
+    try {
+        const response = await fetch('/api/reviews/stats');
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById('reviewsCompleted').textContent = data.reviews_completed;
+        } else {
+            console.error("Failed to fetch review stats:", data.message);
+        }
+    } catch (error) {
+        console.error("Error fetching review stats:", error);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -489,7 +504,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     if (result.success) {
                         alert(result.message);
-                        document.getElementById('reviewsCompleted').textContent = '0';
+                        updateReviewProgress();
                     } else {
                         alert(`Error: ${result.message}`);
                     }
@@ -501,6 +516,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Initial check for review progress
+    // Initial fetch of review progress from the server
     updateReviewProgress();
 }); 
