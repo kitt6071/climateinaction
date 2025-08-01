@@ -6,12 +6,13 @@ from collections import defaultdict
 import asyncio
 import sys
 import logging
+import time
 from .cache import Cache, SimpleCache
 from .setup import setup_pipeline_logging, get_dynamic_run_base_path, load_data_with_offset
 from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifier_components, 
                              predict_relevance_local, classify_abstract_relevance_ollama, 
                              setup_embedding_classifier, predict_relevance_embeddings)
-from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples
+from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples, classify_threat_for_subject
 from .triplet_extraction import verify_triplets, normalize_species_names, convert_to_summary, extract_entities_concurrently, generate_relationships_concurrently
 from .llm_api_utility import enable_metrics_tracking, log_metrics_summary
 from .graph_analysis import (build_global_graph, analyze_graph_detailed, 
@@ -25,6 +26,7 @@ from .setup import setup_llm, setup_vector_search
 logger = logging.getLogger("pipeline")
 
 async def run_main_pipeline_logic(args):
+    start_time = time.time()
     
     # basic path setup
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -507,6 +509,10 @@ async def run_main_pipeline_logic(args):
 
     if not norm_triplets:
         logger.warning("No triplets generated")
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        logger.info(f"Total pipeline execution time: {elapsed_time:.2f} seconds")
+        print(f"\nTotal pipeline execution time: {elapsed_time:.2f} seconds")
         return run_base
 
     # save results
@@ -586,6 +592,11 @@ async def run_main_pipeline_logic(args):
     else:
         logger.warning("Skipping t-SNE: missing requirements")
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.info(f"Total pipeline execution time: {elapsed_time:.2f} seconds")
+    print(f"\nTotal pipeline execution time: {elapsed_time:.2f} seconds")
+    
     return run_base
 
 
@@ -763,10 +774,35 @@ async def process_abstract_chunk(
         logger.warning("No triplets survived verification")
         return [], {}
 
+    logger.info(f"Classifying threat sentiment for {len(verified_triplets)} triplets.")
+    threat_classification_tasks = []
+    for s, p, o, d in verified_triplets:
+        threat_desc, _, _, _ = parse_and_validate_object(o)
+        threat_classification_tasks.append(
+            classify_threat_for_subject(s, p, threat_desc, llm_setup, refinement_cache)
+        )
+
+    threat_classification_results = await asyncio.gather(*threat_classification_tasks)
+
+    triplets_surviving_threat_check = []
+    for i, result in enumerate(threat_classification_results):
+        if result:
+            triplets_surviving_threat_check.append(verified_triplets[i])
+            classification = result.get('classification', 'N/A')
+            logger.info(f"Threat check PASSED for triplet. Classification: {classification}")
+        else:
+            logger.info(f"Threat check filtered out triplet (was positive/very positive).")
+            
+    logger.info(f"{len(triplets_surviving_threat_check)}/{len(verified_triplets)} triplets survived threat sentiment check.")
+    
+    if not triplets_surviving_threat_check:
+        logger.warning("No triplets survived threat sentiment check")
+        return [], {}
+
     # normalization
-    logger.info(f"Normalizing species names for {len(verified_triplets)} triplets")
+    logger.info(f"Normalizing species names for {len(triplets_surviving_threat_check)} triplets")
     normalized_triplets, taxonomy_map = await normalize_species_names(
-        verified_triplets, 
+        triplets_surviving_threat_check, 
         llm_setup
     )
     logger.info(f"Normalization done: {len(normalized_triplets)} triplets, {len(taxonomy_map)} taxonomy entries")
