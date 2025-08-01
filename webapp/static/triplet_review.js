@@ -111,6 +111,9 @@ async function loadRandomTriplet() {
 }
 
 function displayTripletGroup(group) {
+    if (!group) return;
+    currentGroup = group; 
+    
     document.getElementById('tripletReviewSection').style.display = 'block';
     
     const doiElement = document.getElementById('reviewDOI');
@@ -120,9 +123,11 @@ function displayTripletGroup(group) {
     
     document.getElementById('reviewAbstract').textContent = group.abstract || 'Abstract not available';
     
-    const displayContainer = document.getElementById('tripletDisplay');
+    const displayContainer = document.getElementById('tripletDisplayList');
     displayContainer.innerHTML = '';
     
+    document.getElementById('tripletsHeader').textContent = `Extracted Triplets`;
+
     if (group.triplets && group.triplets.length > 0) {
         group.triplets.forEach((triplet, index) => {
             const tripletEl = document.createElement('div');

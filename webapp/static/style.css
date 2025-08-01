@@ -2681,14 +2681,14 @@ footer {
 }
 
 .comments-section {
-    margin-bottom: 25px;
+    margin-top: 1.5rem;
 }
 
 .comments-section label {
+    font-weight: normal;
+    color: #495057;
+    margin-bottom: 0.5rem;
     display: block;
-    margin-bottom: 8px;
-    font-weight: bold;
-    color: #333;
 }
 
 .comments-section textarea {
@@ -2696,6 +2696,12 @@ footer {
     max-width: 100%;
     box-sizing: border-box;
     resize: vertical;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.75rem;
+    font-family: inherit;
+    font-size: 1rem;
+    background-color: #f8f9fa;
 }
 
 .expert-info {

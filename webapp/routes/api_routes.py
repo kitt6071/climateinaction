@@ -303,7 +303,7 @@ def submit_review():
         file_path = os.path.join(reviews_dir, "triplet_reviews.jsonl")
         
         with open(file_path, 'a') as f:
-            f.write(json.dumps(review_data) + '\\n')
+            f.write(json.dumps(review_data) + '\n')
         
         reviewer_name = review_data.get('reviewer', {}).get('name', 'Anonymous')
         session_id = review_data.get('reviewer', {}).get('session_id', 'N/A')

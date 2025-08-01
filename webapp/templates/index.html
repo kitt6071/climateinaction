@@ -241,8 +241,10 @@
                         </div>
                         
                         <div class="review-panel">
-                            <h3>Extracted Triplets</h3>
-                            <div id="tripletDisplay" class="triplet-display-list">
+                            <div class="triplet-display-container">
+                                <h3 id="tripletsHeader">Extracted Triplets</h3>
+                                <ul id="tripletDisplayList" class="triplet-display-list">
+                                </ul>
                             </div>
 
                             <div class="review-form">
@@ -290,7 +292,7 @@
                                 </div>
                                 
                                 <div class="comments-section">
-                                    <label for="reviewComments">Comments & Suggestions:</label>
+                                    <!-- <label for="reviewComments">Comments & Suggestions:</label> -->
                                     <textarea id="reviewComments" rows="4" placeholder="Provide specific feedback about accuracy, missing context, or suggested improvements..."></textarea>
                                 </div>
                                 
