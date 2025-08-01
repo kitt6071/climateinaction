@@ -315,6 +315,24 @@ def submit_review():
         logger.error(f"Error submitting review: {e}", exc_info=True)
         return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500 
 
+@api_bp.route('/clear-reviews', methods=['POST'])
+def clear_reviews():
+    try:
+        reviews_file_path = "/webapp/data/reviews/triplet_reviews.jsonl"
+        
+        if os.path.exists(reviews_file_path):
+            os.remove(reviews_file_path)
+            logger.info(f"All reviews have been cleared. File deleted: {reviews_file_path}")
+            return jsonify({"success": True, "message": "All reviews have been successfully cleared."})
+        else:
+            logger.info("Clear reviews called, but no review file to delete.")
+            return jsonify({"success": True, "message": "No reviews found to clear."})
+            
+    except Exception as e:
+        logger.error(f"Error clearing reviews: {e}", exc_info=True)
+        return jsonify({"success": False, "message": f"An error occurred while clearing reviews: {str(e)}"}), 500
+        
+
 @api_bp.route('/export-reviews', methods=['GET'])
 def export_reviews():
     try:

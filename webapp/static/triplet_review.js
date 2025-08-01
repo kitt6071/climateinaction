@@ -316,10 +316,6 @@ function loadProgress() {
         if (saved) {
             reviewProgress = JSON.parse(saved);
             document.getElementById('reviewsCompleted').textContent = reviewProgress.completed;
-            if (reviewProgress.completed > 0) {
-                document.getElementById('averageRating').textContent = 
-                    (reviewProgress.totalRating / reviewProgress.completed).toFixed(1);
-            }
         }
     } catch (error) {
         console.error('Error loading progress:', error);
@@ -466,6 +462,11 @@ submitReview = async function() {
     }
 };
 
+function updateReviewProgress() {
+    const savedReviews = JSON.parse(localStorage.getItem('tripletReviews')) || [];
+    document.getElementById('reviewsCompleted').textContent = savedReviews.length;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const progressSection = document.getElementById('reviewProgress');
     if (progressSection) {
@@ -475,4 +476,31 @@ document.addEventListener('DOMContentLoaded', function() {
         exportBtn.onclick = exportReviews;
         progressSection.appendChild(exportBtn);
     }
+
+    const clearReviewsBtn = document.getElementById('clearReviewsBtn');
+    if (clearReviewsBtn) {
+        clearReviewsBtn.addEventListener('click', async () => {
+            if (confirm("Are you sure you want to permanently delete all review data? This action cannot be undone.")) {
+                try {
+                    const response = await fetch('/api/clear-reviews', {
+                        method: 'POST',
+                    });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        alert(result.message);
+                        document.getElementById('reviewsCompleted').textContent = '0';
+                    } else {
+                        alert(`Error: ${result.message}`);
+                    }
+                } catch (error) {
+                    console.error("Failed to clear reviews:", error);
+                    alert("An error occurred while trying to clear reviews. See console for details.");
+                }
+            }
+        });
+    }
+
+    // Initial check for review progress
+    updateReviewProgress();
 }); 

@@ -3086,3 +3086,42 @@ footer {
 .triplet-component strong {
     margin-right: 0.5rem;
 }
+
+.review-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.btn-export, .btn-danger {
+    padding: 0.75rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    text-align: center;
+    cursor: pointer;
+    border: none;
+    font-size: 0.95em;
+    flex-grow: 0;
+    white-space: nowrap;
+}
+
+.btn-export {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-export:hover {
+    background-color: #218838;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #c82333;
+}

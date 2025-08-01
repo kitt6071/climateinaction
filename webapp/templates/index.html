@@ -309,15 +309,16 @@
                     </div>
                 </div>
                 
-                <div id="reviewProgress" class="review-progress">
+                <div class="review-progress">
                     <h3>Review Progress</h3>
-                    <div class="progress-stats">
-                        <div class="stat-item">
-                            <span class="stat-label">Reviews Completed:</span>
-                            <span id="reviewsCompleted" class="stat-value">0</span>
-                        </div>
+                    <div class="progress-item">
+                        <span>Reviews Completed:</span>
+                        <strong id="reviewsCompleted">0</strong>
                     </div>
-                    <a href="/api/export-reviews" class="export-btn" download="triplet_reviews.csv">Export Reviews (CSV)</a>
+                    <div class="review-actions">
+                        <a href="/api/export-reviews" class="btn-export" download="triplet_reviews.csv">Export All Reviews (CSV)</a>
+                        <button id="clearReviewsBtn" class="btn-danger">Clear All Reviews</button>
+                    </div>
                 </div>
             </div>
         </div>
