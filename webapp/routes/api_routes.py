@@ -1,5 +1,5 @@
 import random
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 import config
 from config import logger
 from utils import load_data_if_needed, get_triplet_by_id
@@ -311,3 +311,57 @@ def submit_review():
     except Exception as e:
         logger.error(f"Error submitting review: {e}", exc_info=True)
         return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500 
+
+@api_bp.route('/export-reviews', methods=['GET'])
+def export_reviews():
+    try:
+        reviews_file_path = "/webapp/data/reviews/triplet_reviews.jsonl"
+        
+        if not os.path.exists(reviews_file_path):
+            return "No reviews found to export.", 404
+
+        import csv
+        from io import StringIO
+
+        output = StringIO()
+        writer = csv.writer(output)
+
+        header = [
+            'review_timestamp', 'server_timestamp', 'reviewer_name', 'session_id',
+            'review_comments', 'group_doi', 'triplet_id', 
+            'triplet_subject', 'is_subject_valid',
+            'triplet_predicate', 'is_predicate_valid',
+            'triplet_object', 'is_object_valid'
+        ]
+        writer.writerow(header)
+        with open(reviews_file_path, 'r') as f:
+            for line in f:
+                review = json.loads(line)
+                
+                for triplet in review.get('triplets', []):
+                    validity = triplet.get('validity', {})
+                    row = [
+                        review.get('timestamp'),
+                        review.get('server_timestamp'),
+                        review.get('reviewer', {}).get('name'),
+                        review.get('reviewer', {}).get('session_id'),
+                        review.get('comments'),
+                        review.get('group_doi'),
+                        triplet.get('id'),
+                        triplet.get('subject'), validity.get('subject'),
+                        triplet.get('predicate'), validity.get('predicate'),
+                        triplet.get('object'), validity.get('object')
+                    ]
+                    writer.writerow(row)
+
+        output.seek(0)
+        
+        return Response(
+            output,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment;filename=triplet_reviews.csv"}
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting reviews: {e}", exc_info=True)
+        return "Error generating CSV file.", 500 

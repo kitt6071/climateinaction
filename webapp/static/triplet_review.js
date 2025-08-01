@@ -132,13 +132,27 @@ function displayTripletGroup(group) {
             tripletEl.innerHTML = `
                 <div class="triplet-item-number">${index + 1}</div>
                 <div class="triplet-item-content">
-                    <div class="triplet-component"><strong>Subject:</strong> ${triplet.subject}</div>
-                    <div class="triplet-component"><strong>Predicate:</strong> ${triplet.predicate}</div>
-                    <div class="triplet-component"><strong>Object:</strong> ${triplet.object}</div>
-                </div>
-                <div class="triplet-validation-control">
-                    <input type="checkbox" id="triplet-valid-${triplet.id}" class="triplet-valid-checkbox" checked>
-                    <label for="triplet-valid-${triplet.id}">Valid</label>
+                    <div class="triplet-component">
+                        <strong>Subject:</strong> ${triplet.subject}
+                        <div class="triplet-validation-control">
+                            <input type="checkbox" id="triplet-${triplet.id}-subject-valid" class="triplet-component-valid-checkbox" data-part="subject" checked>
+                            <label for="triplet-${triplet.id}-subject-valid">Valid</label>
+                        </div>
+                    </div>
+                    <div class="triplet-component">
+                        <strong>Predicate:</strong> ${triplet.predicate}
+                        <div class="triplet-validation-control">
+                            <input type="checkbox" id="triplet-${triplet.id}-predicate-valid" class="triplet-component-valid-checkbox" data-part="predicate" checked>
+                            <label for="triplet-${triplet.id}-predicate-valid">Valid</label>
+                        </div>
+                    </div>
+                    <div class="triplet-component">
+                        <strong>Object:</strong> ${triplet.object}
+                        <div class="triplet-validation-control">
+                            <input type="checkbox" id="triplet-${triplet.id}-object-valid" class="triplet-component-valid-checkbox" data-part="object" checked>
+                            <label for="triplet-${triplet.id}-object-valid">Valid</label>
+                        </div>
+                    </div>
                 </div>
             `;
             displayContainer.appendChild(tripletEl);
@@ -197,24 +211,23 @@ async function submitReview() {
         group_doi: currentGroup.doi,
         triplets: currentGroup.triplets.map(t => {
             const tripletItemEl = document.querySelector(`.triplet-item[data-triplet-id="${t.id}"]`);
-            const isValid = tripletItemEl ? tripletItemEl.querySelector('.triplet-valid-checkbox').checked : true;
             
+            const isSubjectValid = tripletItemEl ? tripletItemEl.querySelector('[data-part="subject"]').checked : true;
+            const isPredicateValid = tripletItemEl ? tripletItemEl.querySelector('[data-part="predicate"]').checked : true;
+            const isObjectValid = tripletItemEl ? tripletItemEl.querySelector('[data-part="object"]').checked : true;
+
             return {
+                id: t.id,
                 subject: t.subject,
                 predicate: t.predicate,
                 object: t.object,
-                id: t.id,
-                isValid: isValid
+                validity: {
+                    subject: isSubjectValid,
+                    predicate: isPredicateValid,
+                    object: isObjectValid
+                }
             };
         }),
-        rating: overallRating,
-        validation: {
-            speciesCorrect: document.getElementById('speciesCorrect').checked,
-            threatCorrect: document.getElementById('threatCorrect').checked,
-            relationshipCorrect: document.getElementById('relationshipCorrect').checked,
-            abstractSupports: document.getElementById('abstractSupports').checked,
-            conservationRelevant: document.getElementById('conservationRelevant').checked
-        },
         comments: document.getElementById('reviewComments').value.trim(),
         reviewer: reviewSession ? {
             name: reviewSession.name,

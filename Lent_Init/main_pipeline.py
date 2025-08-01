@@ -272,6 +272,8 @@ async def run_main_pipeline_logic(args):
             title_text = row_data["title"]
             doi_text = row_data.get("doi")
             if not doi_text: continue
+            if "captivity" in abstract_text.lower() or len(abstract_text) < 50:
+                continue
             batch_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
 
         skip_rows += actual_rows
