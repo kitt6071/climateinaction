@@ -21,65 +21,28 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-setTimeout(function() {
-    console.log('Delayed initialization check...');
-    if (document.getElementById('loadRandomTriplet') && !window.reviewSystemInitialized) {
-        console.log('Initializing review system on delay');
-        initializeReviewSystem();
-        window.reviewSystemInitialized = true;
-    }
-}, 1000);
-
-window.addEventListener('tripletsLoaded', function() {
-    if (document.getElementById('loadRandomTriplet')) {
-        console.log('Triplets loaded, initializing review system');
-        initializeReviewSystem();
-    }
-});
-
 function initializeReviewSystem() {
     if (window.reviewSystemInitialized) {
-        console.log('Review system already initialized, skipping...');
         return;
     }
-    
-    console.log('Initializing review system...');
     
     const startBtn = document.getElementById('startReviewSession');
     const endBtn = document.getElementById('endSession');
     const loadBtn = document.getElementById('loadRandomTriplet');
+    const submitBtn = document.getElementById('submitReview');
+    const skipBtn = document.getElementById('skipTriplet');
     
-    console.log('Review elements found:', {
-        startBtn: !!startBtn,
-        endBtn: !!endBtn, 
-        loadBtn: !!loadBtn
-    });
-    
-    if (!startBtn || !endBtn || !loadBtn) {
-        console.warn('Review system elements not found, skipping initialization');
+    if (!startBtn || !endBtn || !loadBtn || !submitBtn || !skipBtn) {
         return;
     }
     
     startBtn.addEventListener('click', startSession);
     endBtn.addEventListener('click', endSession);
     loadBtn.addEventListener('click', loadRandomTriplet);
-    
-    document.querySelectorAll('.rating-btn').forEach(button => {
-        button.addEventListener('click', () => {
-            const rating = parseInt(button.dataset.rating, 10);
-            selectRating(rating);
-        });
-    });
-    
-    document.getElementById('submitReview').addEventListener('click', submitReview);
-    document.getElementById('skipTriplet').addEventListener('click', skipTriplet);
-    
-    loadProgress();
-    
-    loadSession();
+    submitBtn.addEventListener('click', submitReview);
+    skipBtn.addEventListener('click', skipTriplet);
     
     window.reviewSystemInitialized = true;
-    console.log('Review system initialization complete');
 }
 
 async function loadRandomTriplet() {
@@ -211,13 +174,6 @@ async function submitReview() {
         return;
     }
 
-    // No longer needed since rating is removed.
-    // const overallRating = document.querySelector('.rating-btn.selected') ? document.querySelector('.rating-btn.selected').dataset.rating : null;
-    // if (!overallRating) {
-    //     alert("Please select an overall accuracy rating.");
-    //     return;
-    // }
-
     const reviewData = {
         group_doi: currentGroup.doi,
         triplets: currentGroup.triplets.map(t => {
@@ -273,18 +229,6 @@ async function submitReview() {
         console.error("Error submitting review:", error);
         alert("An error occurred during submission. See console for details.");
     }
-    
-    storeReviewLocally(reviewData);
-    
-    updateProgress(reviewData.rating);
-    
-    document.getElementById('reviewStatus').textContent = `Review submitted! Rating: ${reviewData.rating}/5`;
-    
-    resetReviewForm();
-    
-    setTimeout(() => {
-        loadRandomTriplet();
-    }, 1500);
 }
 
 function skipTriplet() {
