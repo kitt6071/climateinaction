@@ -2693,13 +2693,9 @@ footer {
 
 .comments-section textarea {
     width: 100%;
-    padding: 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    max-width: 100%;
+    box-sizing: border-box;
     resize: vertical;
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1.5;
 }
 
 .expert-info {

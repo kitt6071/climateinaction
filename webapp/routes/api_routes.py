@@ -364,4 +364,4 @@ def export_reviews():
 
     except Exception as e:
         logger.error(f"Error exporting reviews: {e}", exc_info=True)
-        return "Error generating CSV file.", 500 
+        return f"Error generating CSV file: {str(e)}", 500 
