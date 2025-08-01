@@ -48,7 +48,7 @@ WIKISPECIES_LOG_FILE="${DYNAMIC_RESULTS_PATH}/wikispecies_verification_log.json"
 
 mkdir -p Lent_Init/runs
 
-PIPELINE_COMMANDS="echo '--- Step 1: Running Main Data Processing Pipeline (Enhanced Batch Processing) ---'; "
+PIPELINE_COMMANDS="echo '--- Step 1: Running Main Data Processing Pipeline ---'; "
 PIPELINE_COMMANDS+="python -m Lent_Init.batch_ingesting --enable-batch-processing --run-main-pipeline; "
 PIPELINE_COMMANDS+="echo '--- Step 2: Running Wikispecies Verification ---'; "
 PIPELINE_COMMANDS+="if [ -f \"$WIKI_SPECIES_LIST_FILE\" ]; then "
