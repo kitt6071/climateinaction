@@ -797,40 +797,41 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
         return []
 
 
-# fuzzy matching for similar terms
-def are_terms_similar(term1: str, term2: str, threshold: int = 85) -> bool:
-    ratio = fuzz.ratio(term1.lower(), term2.lower())
-    return ratio >= threshold
+def are_terms_similar(term1: str, term2: str, threshold: int = 80) -> bool:
+    t1 = term1.lower().strip()
+    t2 = term2.lower().strip()
+    return fuzz.token_set_ratio(t1, t2) >= threshold
 
 def are_threats_semantically_similar(threat1: str, threat2: str) -> bool:
-    threat1_lower = threat1.lower().strip()
-    threat2_lower = threat2.lower().strip()
-    
-    # Exact match
-    if threat1_lower == threat2_lower:
+
+    t1 = threat1.strip()
+    t2 = threat2.strip()
+
+    t1_lower = t1.lower()
+    t2_lower = t2.lower()
+
+    if t1_lower == t2_lower:
         return True
-        
-    # Storm/weather synonyms
-    storm_terms = {"strong winds", "storm", "storms", "wind storm", "severe weather", "hurricane", "cyclone", "typhoon"}
-    if any(term in threat1_lower for term in storm_terms) and any(term in threat2_lower for term in storm_terms):
-        return True
-    
-    # Pollution synonyms  
-    pollution_terms = {"pollution", "contamination", "chemical exposure", "toxic", "pollutants"}
-    if any(term in threat1_lower for term in pollution_terms) and any(term in threat2_lower for term in pollution_terms):
-        return True
-        
-    # Habitat/development synonyms
-    habitat_terms = {"habitat loss", "habitat destruction", "development", "urbanization", "deforestation"}
-    if any(term in threat1_lower for term in habitat_terms) and any(term in threat2_lower for term in habitat_terms):
-        return True
-        
-    # Climate terms
-    climate_terms = {"climate change", "temperature", "warming", "sea level", "drought"}
-    if any(term in threat1_lower for term in climate_terms) and any(term in threat2_lower for term in climate_terms):
-        return True
-        
-    return are_terms_similar(threat1, threat2, threshold=75)
+
+    # Token Jaccard + fuzzy token-set combo
+    def tokenize(s: str) -> set[str]:
+        import re as _re
+        s = _re.sub(r"[^a-z0-9\s]", " ", s.lower())
+        tokens = [tok for tok in s.split() if tok not in {"the","a","an","of","and","to","for","in","on","by","with","due","from"}]
+        return set(tokens)
+
+    tok1 = tokenize(t1)
+    tok2 = tokenize(t2)
+    if not tok1 or not tok2:
+        return False
+
+    jacc = len(tok1 & tok2) / max(1, len(tok1 | tok2))
+    fuzzy = fuzz.token_set_ratio(t1_lower, t2_lower) / 100.0
+
+    avg_len = (len(t1) + len(t2)) / 2
+    base_thresh = 0.78 if avg_len > 20 else 0.85
+    score = 0.6 * fuzzy + 0.4 * jacc
+    return score >= base_thresh
 
 # merge similar triplets
 def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[Tuple[str, str, str, str]]:
@@ -854,7 +855,8 @@ def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[
                 
             # Check if subjects and objects are similar using enhanced matching
             if (are_terms_similar(subj1, subj2) and 
-                are_threats_semantically_similar(obj1, obj2)):
+                are_threats_semantically_similar(obj1, obj2) and
+                (doi1 == doi2)):
                 similar_group.append((subj2, pred2, obj2, doi2))
                 processed_indices.add(j)
         
@@ -864,18 +866,28 @@ def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[
             # Choose the most detailed object (threat description)
             objects = [t[2] for t in similar_group]
             combined_obj = max(objects, key=len)  # Most detailed threat description
-            combined_doi = similar_group[0][3]
+            # If all DOIs match, keep it; otherwise fallback to the first
+            doi_set = {t[3] for t in similar_group}
+            combined_doi = doi1 if len(doi_set) == 1 else similar_group[0][3]
             
-            # Smart predicate consolidation
             predicates = list(set(t[1] for t in similar_group))
             if len(predicates) > 1:
-                # Choose the most detailed/longest predicate as it likely has more information
-                combined_pred = max(predicates, key=len)
-                # If predicates are very different, keep the first one to avoid confusion
-                if any(are_terms_similar(predicates[0], p, threshold=60) for p in predicates[1:]):
-                    combined_pred = max(predicates, key=len)
+                def predicate_score(p: str) -> int:
+                    p_low = p.lower()
+                    bonus_terms = [
+                        "due to", "resulting in", "leading to", "causing", "through", "via",
+                        "reduced", "decreased", "mortality", "breeding", "nest", "productivity",
+                        "contamination", "pollution", "disturbance", "collision", "predation"
+                    ]
+                    score = min(len(p), 160)
+                    score += sum(2 for bt in bonus_terms if bt in p_low)
+                    return score
+                # choose by score, but avoid merging totally dissimilar text
+                best = max(predicates, key=predicate_score)
+                if any(are_terms_similar(best, p, threshold=60) for p in predicates):
+                    combined_pred = best
                 else:
-                    combined_pred = predicates[0]  # Keep first if too different
+                    combined_pred = predicates[0]
             else:
                 combined_pred = predicates[0]
             

@@ -667,56 +667,8 @@ async def process_abstract_chunk(
         logger.warning("No raw triplets extracted")
         return [], {}
 
-    iucn_items = [] 
-    pre_enriched = {} 
-
-    for idx, (s, p, original_o, d) in enumerate(raw_triplets):
-        desc, code, name, is_valid = parse_and_validate_object(original_o)
-        final_desc = desc if desc else original_o
-        needs_iucn = not is_valid or not (code and name) or code == "12.1"
-
-        if needs_iucn:
-            abstract_text = doi_to_abstract.get(d, None)
-            cache_key = f"iucn_classify_json_schema:{final_desc}|context:{s}|{p}|abstract:{bool(abstract_text)}"
-            cached = refinement_cache.get(cache_key)
-            if cached:
-                cached_code, cached_name = cached
-                refined_o = f"{final_desc} [IUCN: {cached_code} {cached_name}]"
-                pre_enriched[idx] = (s, p, refined_o, d)
-            else:
-                iucn_items.append((s, p, final_desc, original_o, idx, abstract_text))
-        else:
-            refined_o = f"{final_desc} [IUCN: {code} {name}]"
-            pre_enriched[idx] = (s, p, refined_o, d)
-    
-    iucn_tasks = [
-        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5]) 
-        for item in iucn_items
-    ]
-    
-    enriched_triplets = [None] * len(raw_triplets)
-
-    if iucn_tasks:
-        logger.info(f"IUCN classification for {len(iucn_tasks)} items")
-        iucn_results = await asyncio.gather(*iucn_tasks)
-        logger.info("IUCN classification done")
-        for i, (code, name) in enumerate(iucn_results):
-            s_iucn, p_iucn, desc_iucn, _orig_o, orig_idx, _abstract = iucn_items[i]
-            refined_o = f"{desc_iucn} [IUCN: {code} {name}]"
-            enriched_triplets[orig_idx] = (s_iucn, p_iucn, refined_o, raw_triplets[orig_idx][3])
-    
-    for idx, triplet in pre_enriched.items():
-        enriched_triplets[idx] = triplet
-    
-    # fill in any gaps
-    for idx in range(len(raw_triplets)):
-        if enriched_triplets[idx] is None:
-            s, p, o, d = raw_triplets[idx]
-            logger.warning(f"Triplet {idx} ({s[:20]}) missed IUCN, using original: {o[:30]}")
-            enriched_triplets[idx] = (s, p, o, d)
-            
-    enriched_triplets = [t for t in enriched_triplets if t is not None]
-    logger.info(f"IUCN enrichment complete: {len(enriched_triplets)} triplets")
+    logger.info("Deferring IUCN classification until after verification/sentiment")
+    enriched_triplets = list(raw_triplets)
 
     if not enriched_triplets:
         logger.warning("No enriched triplets")
@@ -810,12 +762,64 @@ async def process_abstract_chunk(
         llm_setup
     )
     logger.info(f"Normalization done: {len(normalized_triplets)} triplets, {len(taxonomy_map)} taxonomy entries")
-    
-    logger.info(f"Chunk complete: returning {len(normalized_triplets)} triplets, {len(taxonomy_map)} taxonomy entries")
-    
+
+    post_iucn_items = []
+    post_pre_enriched = {}
+    doi_to_abstract_post = {data['doi']: data['abstract'] for data in chunk if 'doi' in data and 'abstract' in data}
+
+    for idx, (s, p, o, d) in enumerate(normalized_triplets):
+        desc, code, name, is_valid = parse_and_validate_object(o)
+        final_desc = desc if desc else o
+        needs_iucn = not is_valid or not (code and name) or code == "12.1"
+
+        if needs_iucn:
+            abstract_text = doi_to_abstract_post.get(d, None)
+            cache_key = f"iucn_classify_json_schema:{final_desc}|context:{s}|{p}|abstract:{bool(abstract_text)}"
+            cached = refinement_cache.get(cache_key)
+            if cached:
+                cached_code, cached_name = cached
+                refined_o = f"{final_desc} [IUCN: {cached_code} {cached_name}]"
+                post_pre_enriched[idx] = (s, p, refined_o, d)
+            else:
+                post_iucn_items.append((s, p, final_desc, o, idx, abstract_text))
+        else:
+            refined_o = f"{final_desc} [IUCN: {code} {name}]"
+            post_pre_enriched[idx] = (s, p, refined_o, d)
+
+    post_iucn_tasks = [
+        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5])
+        for item in post_iucn_items
+    ]
+
+    final_triplets: List[Tuple[str, str, str, str]] = [None] * len(normalized_triplets)  # type: ignore
+
+    if post_iucn_tasks:
+        logger.info(f"IUCN classification for {len(post_iucn_tasks)} items (post-filter)")
+        post_iucn_results = await asyncio.gather(*post_iucn_tasks)
+        logger.info("IUCN classification done (post-filter)")
+        for i, (code, name) in enumerate(post_iucn_results):
+            s_iucn, p_iucn, desc_iucn, _orig_o, orig_idx, _abstract = post_iucn_items[i]
+            refined_o = f"{desc_iucn} [IUCN: {code} {name}]"
+            final_triplets[orig_idx] = (s_iucn, p_iucn, refined_o, normalized_triplets[orig_idx][3])
+
+    for idx, triplet in post_pre_enriched.items():
+        final_triplets[idx] = triplet
+
+    # fill any gaps (keep original object if IUCN missing)
+    for idx in range(len(normalized_triplets)):
+        if final_triplets[idx] is None:  # type: ignore
+            s, p, o, d = normalized_triplets[idx]
+            final_triplets[idx] = (s, p, o, d)
+
+    # compact None
+    final_triplets = [t for t in final_triplets if t is not None]
+    logger.info(f"Post-filter IUCN enrichment complete: {len(final_triplets)} triplets")
+
+    logger.info(f"Chunk complete: returning {len(final_triplets)} triplets, {len(taxonomy_map)} taxonomy entries")
+
     log_metrics_summary(llm_setup, logger)
-    
-    return normalized_triplets, taxonomy_map
+
+    return final_triplets, taxonomy_map
 
 
 async def run_batch_pipeline_logic(args):
