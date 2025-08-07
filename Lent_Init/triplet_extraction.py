@@ -129,6 +129,7 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
         6. Only include threats DIRECTLY mentioned in the text as the *cause* of a negative outcome.
         7. Do NOT attempt to classify the threat using IUCN categories here.
         8. Do not try to link these threats to specific species *yet*. That will be a subsequent step.
+        9. **FIELD OBSERVATIONS ONLY:** Only extract threats that are based on actual field observations, monitoring, or documented cases in wild populations. Exclude laboratory studies, theoretical predictions, hypothetical scenarios, captive breeding studies, or domestic/farmed populations.
 
         **Examples of Incorrect vs. Correct Threat Identification based on provided triplets:**
 
@@ -258,7 +259,7 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
             1. An Abstract (the source text).
             2. A Subject (a specific species name from the abstract).
             3. An Object (a specific threat phrase from the abstract, which is understood to be the CAUSE of harm).
-            Read the entire abstract to get additional context when establishing the relationship between the species and threats. 
+            Read the entire abstract to extract the maximum detail available about how the threat impacts the species, including biological mechanisms, timeframes, severity, and specific effects. 
             Do not be vague or redundant and ensure the relation is a FULL PHRASE, and follow these rules strictly:
 
             **CRITICAL PREDICATE RULES:**
@@ -269,28 +270,39 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
             3.  **The `subject` must be a species from the `Identified Species` list.**
             4.  **The `object` must be a threat from the `Identified Threats` list.**
             5.  **The `predicate` must be a meaningful phrase describing the impact.** It cannot be a single, non-descriptive word like "is" or "are".
-            6.  **Only create triplets for relationships explicitly supported by the abstract.**
+            6.  **BE SPECIFIC AND DETAILED:** Extract as much detail as the abstract provides about the impact mechanism. Use precise, descriptive language that captures the exact nature, timing, magnitude, and biological process of the impact. Include specific biological effects, timeframes, severity indicators, and causal pathways when mentioned in the abstract. Avoid vague terms like "affected by" or "impacted by".
+            7.  **Only create triplets for relationships explicitly supported by the abstract.**
+            8.  **FIELD OBSERVATIONS ONLY:** Only create triplets based on actual observations of wild populations, field studies, or documented real-world cases. Exclude laboratory experiments, theoretical models, or hypothetical predictions.
+            9.  **NO HYPOTHESES AS FACTS:** Do not create triplets from hypothetical statements, predictions, or speculation. Only extract relationships that are presented as observed facts or documented occurrences.
+            10. **HANDLE SPECIES GROUPS:** When an abstract discusses multiple related species under a group name (e.g., "waterbirds" including herons, egrets, bitterns), create specific triplets for each mentioned species AND the group if threats apply broadly.
 
             **Examples of How to Form the Predicate (focus on NOT restating the Object):**
 
             1.  **Abstract Snippet:** \"Ostrich suffer depression as a symptom of severe aspergillosis\"
                 *   **Given Subject:** Ostrich
                 *   **Given Object (Threat):** severe aspergillosis
-                *   **Your Generated Predicate:** \"suffer depression as a symptom of\"
+                *   **VAGUE Predicate (avoid):** \"affected by\"
+                *   **DETAILED Predicate (use):** \"suffer depression as a symptom of\"
                 *   *(Resulting Triplet formed by your system: Ostrich suffer depression as a symptom of severe aspergillosis)*
                 *   **Incorrect Predicate (restates part/all of object):** \"is made ill by severe aspergillosis\"
 
             2.  **Abstract Snippet:** \"Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when temperatures are higher\"
                 *   **Given Subject:** Little Tern
                 *   **Given Object (Threat):** higher temperatures
-                *   **Your Generated Predicate:** \"faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season due to\"
-                *   *(Resulting Triplet: Little Tern faces increased risk of overheating of eggs... due to higher temperatures)*
+                *   **VAGUE Predicate (avoid):** \"affected by\"
+                *   **DETAILED Predicate (use all available detail):** \"faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when exposed to\"
+                *   *(Resulting Triplet: Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when exposed to higher temperatures)*
 
             3.  **Abstract Snippet:** \"Songbird experience impaired avian health due to mercury (Hg) exposure.\"
                 *   **Given Subject:** Songbird
                 *   **Given Object (Threat):** mercury (Hg) exposure
                 *   **Your Generated Predicate:** \"experience impaired avian health due to\"
                 *   *(Resulting Triplet: Songbird experience impaired avian health due to mercury (Hg) exposure)*
+
+            4.  **Complex/Indirect Threat Example:** \"Shorebirds are at risk due to declining food availability from overfishing\"
+                *   **WRONG Predicate:** \"are at risk due to declining shorebirds\"
+                *   **CORRECT Predicate:** \"experience reduced food availability and population stress due to\"
+                *   **CORRECT Object:** \"overfishing\" (the underlying threat, not the declining food)
 
             For each relationship triplet, provide:
             - predicate: The relationship/impact mechanism  
@@ -790,6 +802,36 @@ def are_terms_similar(term1: str, term2: str, threshold: int = 85) -> bool:
     ratio = fuzz.ratio(term1.lower(), term2.lower())
     return ratio >= threshold
 
+def are_threats_semantically_similar(threat1: str, threat2: str) -> bool:
+    threat1_lower = threat1.lower().strip()
+    threat2_lower = threat2.lower().strip()
+    
+    # Exact match
+    if threat1_lower == threat2_lower:
+        return True
+        
+    # Storm/weather synonyms
+    storm_terms = {"strong winds", "storm", "storms", "wind storm", "severe weather", "hurricane", "cyclone", "typhoon"}
+    if any(term in threat1_lower for term in storm_terms) and any(term in threat2_lower for term in storm_terms):
+        return True
+    
+    # Pollution synonyms  
+    pollution_terms = {"pollution", "contamination", "chemical exposure", "toxic", "pollutants"}
+    if any(term in threat1_lower for term in pollution_terms) and any(term in threat2_lower for term in pollution_terms):
+        return True
+        
+    # Habitat/development synonyms
+    habitat_terms = {"habitat loss", "habitat destruction", "development", "urbanization", "deforestation"}
+    if any(term in threat1_lower for term in habitat_terms) and any(term in threat2_lower for term in habitat_terms):
+        return True
+        
+    # Climate terms
+    climate_terms = {"climate change", "temperature", "warming", "sea level", "drought"}
+    if any(term in threat1_lower for term in climate_terms) and any(term in threat2_lower for term in climate_terms):
+        return True
+        
+    return are_terms_similar(threat1, threat2, threshold=75)
+
 # merge similar triplets
 def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[Tuple[str, str, str, str]]:
     if not triplet_list:
@@ -810,22 +852,30 @@ def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[
             if j in processed_indices:
                 continue
                 
-            # Check if subjects and objects are similar
+            # Check if subjects and objects are similar using enhanced matching
             if (are_terms_similar(subj1, subj2) and 
-                are_terms_similar(obj1, obj2)):
+                are_threats_semantically_similar(obj1, obj2)):
                 similar_group.append((subj2, pred2, obj2, doi2))
                 processed_indices.add(j)
         
         # If we found similar triplets, combine them
         if len(similar_group) > 1:
             combined_subj = similar_group[0][0]
-            combined_obj = similar_group[0][2]
+            # Choose the most detailed object (threat description)
+            objects = [t[2] for t in similar_group]
+            combined_obj = max(objects, key=len)  # Most detailed threat description
             combined_doi = similar_group[0][3]
             
-            # Combine unique predicates
+            # Smart predicate consolidation
             predicates = list(set(t[1] for t in similar_group))
             if len(predicates) > 1:
-                combined_pred = " and ".join(predicates)
+                # Choose the most detailed/longest predicate as it likely has more information
+                combined_pred = max(predicates, key=len)
+                # If predicates are very different, keep the first one to avoid confusion
+                if any(are_terms_similar(predicates[0], p, threshold=60) for p in predicates[1:]):
+                    combined_pred = max(predicates, key=len)
+                else:
+                    combined_pred = predicates[0]  # Keep first if too different
             else:
                 combined_pred = predicates[0]
             

@@ -48,7 +48,7 @@ def get_dynamic_run_base_path(model_name: str, max_val: Optional[Union[int, str]
     folder_name = f"{clean_model}_{max_str}"
     return script_dir / "runs" / folder_name
 
-def load_data_with_offset(fname, skip=0, max_rows=1000):
+def load_data_with_offset(fname, skip=0, max_rows=2000):
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     
     if fname == "all_abstracts.parquet":

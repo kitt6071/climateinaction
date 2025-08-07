@@ -10,14 +10,17 @@ from .llm_api_utility import llm_generate, extract_content_from_result
 
 logger = logging.getLogger("pipeline")
 
-async def get_iucn_classification_json(subject: str, predicate: str, threat_desc: str, llm_setup, cache: SimpleCache) -> tuple[str, str]: 
-    cache_key = f"iucn_classify_json_schema:{threat_desc}|context:{subject}|{predicate}"
+async def get_iucn_classification_json(subject: str, predicate: str, threat_desc: str, llm_setup, cache: SimpleCache, abstract: Optional[str] = None) -> tuple[str, str]: 
+    cache_key = f"iucn_classify_json_schema:{threat_desc}|context:{subject}|{predicate}|abstract:{bool(abstract)}"
     cached_result = cache.get(cache_key)
     if cached_result:
         logger.info(f"IUCN cache hit: '{threat_desc[:50]}...'")
         return cached_result
 
-    logger.info(f"Classifying threat: '{threat_desc[:50]}...'")
+    if abstract:
+        logger.info(f"Classifying threat: '{threat_desc[:50]}...' with abstract context ({len(abstract)} chars)")
+    else:
+        logger.info(f"Classifying threat: '{threat_desc[:50]}...' without abstract context")
     
     iucn_schema = {
         "type": "object",
@@ -28,16 +31,30 @@ async def get_iucn_classification_json(subject: str, predicate: str, threat_desc
         "required": ["iucn_code", "iucn_name"]
     }
 
+    abstract_section = ""
+    if abstract:
+        abstract_section = f"""
+**ABSTRACT:**
+
+{abstract}
+
+"""
+
     prompt = f"""
-            Context:
-            Subject (Species): {subject}
-            Predicate (Impact): {predicate}
+{abstract_section}**EXTRACTED RELATIONSHIP:**
 
-            Threat to classify:
-            {threat_desc}
+Subject (Species): {subject}
+Predicate (Interaction): {predicate}
+Object (Threat Detail): {threat_desc}
 
-            Determine the most appropriate IUCN category based on the threat description.
-            Focus on the underlying cause.
+**TASK:**
+Classify this threat using the IUCN-CMP Direct Threats Classification v4.0. Identify the underlying driver of this threat, not just the immediate symptom.
+
+**REQUIRED OUTPUT FORMAT:**
+{{
+  "iucn_code": "<The most specific L2 code, e.g., '1.1'>",
+  "iucn_name": "<The corresponding name for the L2 code>"
+}}
             """
                 
     response_result = await llm_generate(
@@ -77,40 +94,131 @@ async def get_iucn_classification_json(subject: str, predicate: str, threat_desc
     else:
         logger.warning("LLM call failed or empty response")
 
-    # fallback to "other"
-    result = ("12.1", "Other threat")
+    # fallback to "unknown threats"
+    result = ("12", "Unknown Threats")
     cache.set(cache_key, result)
     return result
 
 
 IUCN_CATEGORIES_TEXT = """
-            **IUCN THREAT CATEGORIES:**
-            1 Residential & commercial development (1.1 Housing & urban areas, 1.2 Commercial & industrial areas, 1.3 Tourism & recreation areas)
-            2 Agriculture & aquaculture (2.1 Annual & perennial non-timber crops, 2.2 Wood & pulp plantations, 2.3 Livestock farming & ranching, 2.4 Marine & freshwater aquaculture)
-            3 Energy production & mining (3.1 Oil & gas drilling, 3.2 Mining & quarrying, 3.3 Renewable energy)
-            4 Transportation & service corridors (4.1 Roads & railroads, 4.2 Utility & service lines, 4.3 Shipping lanes, 4.4 Flight paths)
-            5 Biological resource use (5.1 Hunting & collecting terrestrial animals, 5.2 Gathering terrestrial plants, 5.3 Logging & wood harvesting, 5.4 Fishing & harvesting aquatic resources)
-            6 Human intrusions & disturbance (6.1 Recreational activities, 6.2 War, civil unrest & military exercises, 6.3 Work & other activities)
-            7 Natural system modifications (7.1 Fire & fire suppression, 7.2 Dams & water management/use, 7.3 Other ecosystem modifications)
-            8 Invasive & other problematic species, genes & diseases (8.1 Invasive non-native/alien species/diseases, 8.2 Problematic native species/diseases, 8.3 Introduced genetic material, 8.4 Problematic species/diseases of unknown origin, 8.5 Viral/prion-induced diseases, 8.6 Diseases of unknown cause)
-            9 Pollution (9.1 Domestic & urban waste water, 9.2 Industrial & military effluents, 9.3 Agricultural & forestry effluents, 9.4 Garbage & solid waste, 9.5 Air-borne pollutants, 9.6 Excess energy)
-            10 Geological events (10.1 Volcanoes, 10.2 Earthquakes/tsunamis, 10.3 Avalanches/landslides)
-            11 Climate change & severe weather (11.1 Habitat shifting & alteration, 11.2 Droughts, 11.3 Temperature extremes, 11.4 Storms & flooding, 11.5 Other impacts)
-            12 Other options (12.1 Other threat)
+**IUCN-CMP Direct Threats Classification v4.0**
+
+Select the single most specific and relevant category from the list below that best represents the underlying cause of the threat.
+
+**A. Use of Lands & Waters**
+Human uses of land and water areas that have a substantial spatial footprint.
+
+1. Residential, Commercial & Recreation Areas: Human settlements, industrial areas, and other non-agricultural land uses with a substantial footprint.
+   1.1 Residential Areas: Cities, towns, and settlements including non-housing development typically integrated with housing. (Examples: urban areas, suburbs, vacation homes, shopping areas, offices, schools).
+   1.2 Commercial & Industrial Areas: Factories and other commercial centers. (Examples: stand-alone office parks, manufacturing plants, military bases, power plants, landfills, ports, airports).
+   1.3 Recreation & Tourism Areas: Tourism and recreation sites with a substantial spatial footprint. (Examples: visitor facilities in parks, campgrounds, ski areas, golf courses, marinas).
+
+2. Agriculture & Aquaculture: Farming and ranching including agricultural expansion, intensification, or practices with a spatial footprint.
+   2.1 Annual & Perennial Non-Timber Crops: Crops planted for food, fodder, fiber, or fuel. (Examples: farms, oil palm plantations, orchards, vineyards, biofuel crops).
+   2.2 Wood & Pulp Plantations: Stands of trees planted for timber or fiber outside of natural forests. (Examples: teak or eucalyptus plantations, firewood lots, christmas tree farms).
+   2.3 Terrestrial Animal Farming, Ranching & Herding: Domestic terrestrial animals raised for commercial purposes. (Examples: cattle feed lots, dairy farms, cattle ranching, chicken farms, goat/camel/yak herding).
+   2.4 Marine & Freshwater Aquaculture: Aquatic species raised for harvest. (Examples: fish ponds, shrimp production, salmon pens, seeded shellfish beds).
+
+3. Energy Production & Mining: Extraction of non-biological resources.
+   3.1 Oil & Gas Exploration & Extraction: Exploring for and extracting petroleum and other liquid hydrocarbons. (Examples: oil wells, hydraulic fracturing, natural gas drilling).
+   3.2 Mining & Quarrying: Exploring for, developing and producing minerals and rocks. (Examples: coal mines, gold mines, rock quarries, sand/salt mining, guano harvesting).
+   3.3 Renewable Energy: Exploring, developing and producing renewable energy. (Examples: geothermal power, solar farms, wind farms, tidal farms).
+
+4. Transportation, Service & Security Corridors: Linear infrastructure and the effects associated with its use.
+   4.1 Roads, Trails & Railroads: Transport on roadways and dedicated tracks. (Examples: highways, logging roads, bridges, vehicle collisions with wildlife, railroads).
+   4.2 Utility & Service Lines: Transport of energy & resources. (Examples: electrical & phone wires, aqueducts, oil & gas pipelines, electrocution of wildlife).
+   4.3 Shipping Lanes: Transport on and in freshwater and ocean waterways. (Examples: shipping channels, canals, ships running into whales).
+   4.4 Atmospheric & Space Activities: Air and space transport and other activities. (Examples: flight paths, jets impacting birds, drones).
+   4.5 Fencing & Walls: Barriers to movement. (Examples: border walls, fences around farm fields, disease control fencing).
+
+**B. Use / Management of Species & Ecosystems**
+Human uses of biotic resources and disturbance from human presence or management actions in natural systems.
+
+5. Biological Resource Use & Control: Consumptive use of "wild" biological resources.
+   5.1 Hunting, Collecting & Controlling Terrestrial Animals: Hunting or trapping terrestrial wild animals. (Examples: subsistence hunting, commercial wild meat hunting, trophy hunting, pet trade, culling, killing crop-raiding animals).
+   5.2 Gathering, Harvesting & Controlling Terrestrial Plants & Fungi: Harvesting plants, fungi, and other non-timber/non-animal products. (Examples: gathering wild fruit, mushrooms, herbs for medicine; rubber tapping).
+   5.3 Logging, Harvesting & Controlling Trees: Harvesting trees and other woody vegetation for timber, fiber, or fuel. (Examples: clear-cutting, selective logging, pulp operations, fuel wood collection).
+   5.4 Fishing, Harvesting & Controlling Aquatic Species: Harvesting aquatic wild animals or plants. (Examples: net fishing, trawling, blast fishing, whaling, seal hunting, shellfish harvesting, live coral/aquarium fish collection).
+
+6. Human Intrusions & Disturbances: Non-consumptive activities that alter, disturb, and destroy ecosystems and species.
+   6.1 Recreational Activities: People spending time in natural areas outside of established transport corridors. (Examples: hikers, off-road vehicles, motorboats, jet-skis, whale watching, pets in recreational areas).
+   6.2 Conflict, Civil Unrest & Security Activities: Actions by formal or paramilitary forces without a permanent footprint. (Examples: armed conflict, military training exercises, border patrols, abandoned land mines).
+   6.3 Other Human Disturbances: People spending time in natural environments for reasons other than recreation or conflict. (Examples: drug smuggling, species research, vandalism).
+
+7. Natural System Management & Modifications: Human actions that modify ecosystem structures, composition, or regimes.
+   7.1 Fire & Fire Management: Actions that either suppress or increase fire frequency/intensity. (Examples: fire suppression, inappropriate fire management, escaped agricultural fires, arson, campfires).
+   7.2 Dams & Water Management / Use: Actions that modify water levels, flows, and chemistry. (Examples: dam construction/operation, levees, channelization, groundwater pumping, surface water withdrawals).
+   7.3 Earth & Sediment Management: Actions that modify the geophysical environment or change sediment regimes. (Examples: dune stabilization, shoreline armoring, dredging, mine reclamation).
+   7.4 Weather & Climate Management: Actions that modify atmospheric structure and processes. (Examples: cloud seeding, ocean 'fertilization').
+   7.5 Biological System Management: Actions that modify biotic systems. (Examples: mowing grass, removal of snags from streams, artificial reef creation, bird feeders, electric barriers to stop invasive fish).
+   7.6 Removing / Reducing Human Management: Absence or reduction of management regimes important for maintaining ecosystems. (Examples: lack of mowing of meadows, cessation of grazing, stopping predator control).
+
+**C. Additional Sources of Stress**
+Stressors in natural systems that have been altered by the effects of current or historical human actions.
+
+8. Invasive / Other Problematic Species, Genes & Pathogens: Threats from non-native and native species, pathogens, or genetic materials that have become harmful due to human activities.
+   8.1 Invasive Non-Native / Alien Species: Harmful species not originally found within the ecosystem, introduced by human activities. (Examples: rats on islands, feral horses, zebra mussels, stocking exotic fish, ballast water discharge).
+   8.2 Problematic Native Species: Native species that have become "out-of-balance" due to human activities. (Examples: overabundant native deer, algal blooms, insect outbreaks).
+   8.3 Introduced Genetic Material: Human-caused introduction of natural or synthetic genes. (Examples: hatchery salmon breeding with wild fish, domestic cats breeding with wild cats, genetically modified organisms).
+   8.4 Pathogens: Harmful native and non-native agents causing disease. (Examples: plague, Dutch elm disease, Chytrid fungus affecting amphibians).
+
+9. Pollution: Introduction of exotic and/or excess materials or energy.
+   9.1 Water-Borne & Other Effluent Pollution: Water-borne and other liquid pollutants. (Examples: municipal waste discharge, leaking septic systems, fertilizer/pesticide run-off, oil spills, mine tailings, road salt).
+   9.2 Garbage & Solid Waste: Rubbish and other solid materials. (Examples: municipal waste, litter, agricultural plastics, microplastics, ghost fishing gear, construction debris).
+   9.3 Air-Borne Pollutants: Atmospheric pollutants. (Examples: acid rain, smog from vehicle emissions, smoke from fires, radioactive fallout).
+   9.4 Energy Emissions: Inputs of heat, sound, light, or other wave energy. (Examples: beach lights disorienting turtles, noise from highways/airplanes, seismic exploration, sonar).
+
+**D. Other Events & Factors**
+
+10. Natural Disasters: Potentially catastrophic natural disturbances.
+    10.1 Geological Events: Volcanoes, earthquakes, tsunamis, avalanches, landslides.
+    10.2 Severe Weather Events: Storms, hurricanes, blizzards, floods, droughts (as discrete events).
+
+11. Climate Change: Change in climate patterns resulting from increased atmospheric greenhouse gasses.
+    11.1 Changes in Physical & Chemical Regimes: Broad-scale changes in abiotic conditions. (Examples: ocean acidification, changes in salinity, changes in ocean currents).
+    11.2 Changes in Temperature Regimes: Broad-scale changes in temperature. (Examples: heat waves, cold spells, oceanic temperature changes, loss of glaciers/sea ice).
+    11.3 Changes in Precipitation & Hydrological Regimes: Broad-scale changes in precipitation and water cycles. (Examples: changes in rainfall patterns, long-term droughts, increased severity of floods, sea-level rise).
+
+12. Unknown Threats: Use only when no other category is applicable.
             """
 
 IUCN_THREAT_PROMPT_SYSTEM = f"""
-            You are an expert ecological threat classifier. Your task is to assign the single most appropriate IUCN threat category to a given threat description, considering the context of the species and the impact mechanism.
-            CRITICAL: Be extremely concise. Only return the IUCN code and name according to the json schema. Do not include any explanatory text outside the JSON.
-            {IUCN_CATEGORIES_TEXT}
+You are an expert ecologist specializing in threat analysis. Your task is to classify a described threat to a species using the IUCN-CMP Direct Threats Classification v4.0.
 
-            **Instructions:**
-            1. Analyze the provided Threat Description in the context of the Subject (Species) and Predicate (Impact Mechanism).
-            2. Identify the *underlying cause* of the threat. For example, if the threat is "predation", the cause could be an invasive species (8.1), a problematic native species (8.2), or human hunting (5.1). Use the context to decide.
-            3. Select the single *most specific and relevant* IUCN category code and name from the list above that best represents the *underlying cause*.
-            4. **Avoid 12.1 Other threat** unless no other category is remotely applicable. Think critically about the root cause. For instance, "Predation" should not be 12.1 if the context suggests a more specific type of predator. "Small population size" is not a threat to be classified.
-            5. Return ONLY a valid JSON object containing the selected code and name.
-            """
+Analyze the provided context and the specific extracted relationship. Your goal is to identify the single most appropriate threat category that represents the underlying driver of the threat, not just the immediate symptom. For example, if a species is declining due to a lack of food, and the lack of food is caused by logging, the underlying threat is 5.3 Logging, Harvesting & Controlling Trees, not simply "lack of food".
+
+**THREAT DEFINITION:** A threat is a direct, external factor that causes or contributes to the degradation, loss, or impairment of a species or ecosystem. Exclude:
+- Natural ecological processes (predator-prey dynamics, migration, food availability changes)
+- Survey methodologies or research activities (unless harmful to species)
+- Intrinsic population dynamics (intraspecific competition, natural barriers)
+- Neutral ecological observations (species distributions, habitat preferences)
+
+**ECOLOGICAL TERMINOLOGY:** Use proper conservation terminology:
+- "Productivity" = reproductive output (breeding success, clutch size, fecundity)
+- "Low productivity" is a SYMPTOM, not a threat - identify what caused the low productivity
+- Terms like "decline", "mortality", "population reduction" describe EFFECTS, not underlying threats
+- Always trace back to the external human or environmental factor causing these effects
+
+Return your answer as a single, valid JSON object only. Do not include any explanatory text outside the JSON structure.
+
+{IUCN_CATEGORIES_TEXT}
+
+**Critical Instructions:**
+1. Analyze the threat description in the context of the Subject (Species) and Predicate (Impact Mechanism).
+2. Identify the *underlying cause* of the threat, not just the immediate symptom or effect.
+3. Select the single *most specific and relevant* L2 category code (e.g., '1.1', '8.2') that best represents the *underlying driver*.
+4. **Avoid Unknown Threats (12.x)** unless absolutely no other category is applicable. Think critically about the root cause.
+5. For ambiguous cases, consider: What human activity or natural process is ultimately driving this threat?
+6. Return ONLY a valid JSON object with the most specific L2 code and corresponding name.
+
+Examples of underlying cause thinking:
+- "Predation by invasive rats" → 8.1 Invasive Non-Native / Alien Species
+- "Habitat loss from urban expansion" → 1.1 Residential Areas or 1.2 Commercial & Industrial Areas
+- "Disease outbreak in captive-bred population" → 8.4 Pathogens
+- "Collision with wind turbines" → 3.3 Renewable Energy
+- "Low productivity due to mining pollution" → 9.1 Water-Borne & Other Effluent Pollution
+- "Declining due to low productivity" → If no underlying cause given, classify as 12 Unknown Threats
+"""
 
 def parse_and_validate_object(object_str: str) -> tuple[str, Optional[str], Optional[str], bool]:
     if not isinstance(object_str, str):
@@ -215,10 +323,14 @@ async def classify_threat_for_subject(subject: str, predicate: str, obj: str, ll
     system_prompt = """
 You are an ecologist analyzing species interactions. Classify the sentiment of the interaction from the perspective of the **subject** species.
 
+    **EXCLUDE** irrelevant content: survey methodologies, book reviews, research knowledge gaps, or theoretical discussions that don't describe actual threats to wild populations.
+    
+    **EXCLUDE SYMPTOMS AS THREATS**: If the object describes a symptom/effect rather than an underlying cause (e.g., "low productivity", "population decline", "mortality", "reduced breeding success"), classify as **neutral** unless a clear external threat is specified.
+
     Use the following categories:
     - **very negative**: The subject is directly and severely threatened by the interaction (e.g., high mortality from a predator or disease).
     - **negative**: The subject is negatively impacted, but not necessarily severely (e.g., competition for resources).
-    - **neutral**: No clear benefit or detriment (e.g., simple co-occurrence).
+    - **neutral**: No clear benefit or detriment (e.g., simple co-occurrence). Also use for irrelevant research content.
     - **positive**: The interaction is clearly beneficial for the subject and does not suggest it is a threat to others (e.g., finding a food source, successful nesting). The interaction is beneficial for the subject, but in a way that makes the subject a threat to its environment or other species. For example, a species' population exploding due to a new food source, which in turn harms the ecosystem.
     - **very positive**: Strong benefit (e.g., essential food source, successful nesting).
     Return a JSON object with your classification and confidence.
@@ -257,7 +369,7 @@ Analyze the following ecological interaction:
                 cache.set(cache_key, result)
                 logger.info(f"Threat sentiment for '{subject}|{predicate}|{obj}' classified as '{classification}' with confidence {confidence}")
 
-                if classification in ["negative", "very negative", "neutral"]:
+                if classification in ["negative", "very negative"]:
                     return result
                 else:
                     return None

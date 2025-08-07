@@ -20,6 +20,103 @@ import umap
 
 api_bp = Blueprint('api', __name__)
 
+ASSIGNMENTS_FILE = "/webapp/data/reviews/assignments.json"
+ASSIGNMENTS_TIMEOUT = 3600
+
+def get_reviewed_dois():
+    try:
+        reviews_file = "/webapp/data/reviews/triplet_reviews.jsonl"
+        if not os.path.exists(reviews_file):
+            return set()
+        
+        reviewed = set()
+        with open(reviews_file, 'r') as f:
+            for line in f:
+                try:
+                    review = json.loads(line.strip())
+                    doi = review.get('group_doi', '').lower().strip()
+                    if doi:
+                        reviewed.add(doi)
+                except json.JSONDecodeError:
+                    continue
+        return reviewed
+    except Exception as e:
+        logger.error(f"Error reading reviewed DOIs: {e}")
+        return set()
+
+def get_assigned_dois():
+    try:
+        if not os.path.exists(ASSIGNMENTS_FILE):
+            return set()
+        
+        with open(ASSIGNMENTS_FILE, 'r') as f:
+            assignments = json.load(f)
+        
+        current_time = datetime.utcnow().timestamp()
+        active_assignments = {}
+        
+        for session_id, session_data in assignments.items():
+            active_dois = []
+            for assignment in session_data.get('dois', []):
+                if current_time - assignment['timestamp'] < ASSIGNMENTS_TIMEOUT:
+                    active_dois.append(assignment)
+            if active_dois:
+                active_assignments[session_id] = {'dois': active_dois}
+        
+        os.makedirs(os.path.dirname(ASSIGNMENTS_FILE), exist_ok=True)
+        with open(ASSIGNMENTS_FILE, 'w') as f:
+            json.dump(active_assignments, f)
+        
+        assigned = set()
+        for session_data in active_assignments.values():
+            for assignment in session_data.get('dois', []):
+                assigned.add(assignment['doi'])
+        
+        return assigned
+    except Exception as e:
+        logger.error(f"Error reading assignments: {e}")
+        return set()
+
+def get_session_assigned_dois(session_id):
+    try:
+        if not os.path.exists(ASSIGNMENTS_FILE):
+            return set()
+        
+        with open(ASSIGNMENTS_FILE, 'r') as f:
+            assignments = json.load(f)
+        
+        session_data = assignments.get(session_id, {})
+        return {assignment['doi'] for assignment in session_data.get('dois', [])}
+    except Exception as e:
+        logger.error(f"Error reading session assignments: {e}")
+        return set()
+
+def track_doi_assignment(session_id, doi):
+    try:
+        os.makedirs(os.path.dirname(ASSIGNMENTS_FILE), exist_ok=True)
+        
+        assignments = {}
+        if os.path.exists(ASSIGNMENTS_FILE):
+            with open(ASSIGNMENTS_FILE, 'r') as f:
+                assignments = json.load(f)
+        
+        if session_id not in assignments:
+            assignments[session_id] = {'dois': []}
+        
+        session_dois = {assignment['doi'] for assignment in assignments[session_id]['dois']}
+        if doi not in session_dois:
+            assignments[session_id]['dois'].append({
+                'doi': doi,
+                'timestamp': datetime.utcnow().timestamp()
+            })
+        
+        with open(ASSIGNMENTS_FILE, 'w') as f:
+            json.dump(assignments, f)
+            
+        logger.info(f"DOI {doi} assigned to session {session_id}")
+    except Exception as e:
+        logger.error(f"Error tracking assignment: {e}")
+
 @api_bp.route('/load-data', methods=['POST'])
 def manual_load_data():
     try:
@@ -240,6 +337,10 @@ def get_random_triplet():
         if not load_data_if_needed() or config.abstracts_df is None or not config.triplets_data:
             return jsonify({"success": False, "message": "Data not loaded or unavailable."}), 500
 
+        session_id = request.args.get('session_id')
+        if not session_id:
+            return jsonify({"success": False, "message": "Session ID required for review tracking."}), 400
+
         abstract_dois = set(config.abstracts_df['doi_lower'].to_list())
         triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data}
         valid_dois = list(abstract_dois.intersection(triplet_dois))
@@ -247,7 +348,20 @@ def get_random_triplet():
         if not valid_dois:
             return jsonify({"success": False, "message": "No matching DOIs found between abstracts and triplets."}), 404
 
-        selected_doi_lower = random.choice(valid_dois)
+        reviewed_dois = get_reviewed_dois()
+        assigned_dois = get_assigned_dois()
+        session_assigned = get_session_assigned_dois(session_id)
+        
+        available_dois = [doi for doi in valid_dois 
+                         if doi not in reviewed_dois 
+                         and (doi not in assigned_dois or doi in session_assigned)]
+        
+        if not available_dois:
+            return jsonify({"success": False, "message": "No more triplets available for review."}), 404
+
+        selected_doi_lower = random.choice(available_dois)
+        
+        track_doi_assignment(session_id, selected_doi_lower)
         
         abstract_row = config.abstracts_df.filter(pl.col("doi_lower") == selected_doi_lower).row(0, named=True)
         
@@ -313,7 +427,34 @@ def submit_review():
         
     except Exception as e:
         logger.error(f"Error submitting review: {e}", exc_info=True)
-        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500 
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@api_bp.route('/review-progress', methods=['GET'])
+def get_review_progress():
+    """Get review progress statistics"""
+    try:
+        if not load_data_if_needed() or config.abstracts_df is None or not config.triplets_data:
+            return jsonify({"success": False, "message": "Data not loaded"}), 500
+
+        abstract_dois = set(config.abstracts_df['doi_lower'].to_list())
+        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data}
+        total_dois = len(abstract_dois.intersection(triplet_dois))
+        
+        reviewed_dois = get_reviewed_dois()
+        assigned_dois = get_assigned_dois()
+        
+        return jsonify({
+            "success": True,
+            "total_abstracts": total_dois,
+            "reviewed": len(reviewed_dois),
+            "assigned": len(assigned_dois),
+            "available": total_dois - len(reviewed_dois) - len(assigned_dois),
+            "progress_percentage": round((len(reviewed_dois) / total_dois * 100), 1) if total_dois > 0 else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting review progress: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @api_bp.route('/reviews/stats', methods=['GET'])
 def get_review_stats():

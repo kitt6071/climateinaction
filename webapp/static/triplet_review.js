@@ -6,6 +6,12 @@ let reviewProgress = {
 let reviewSession = null;
 let currentGroup = null;
 
+function generateSessionId() {
+    const timestamp = Date.now().toString(36);
+    const randomPart = Math.random().toString(36).substr(2, 9);
+    return `review_${timestamp}_${randomPart}`;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, checking for review elements...');
     const reviewBtn = document.getElementById('loadRandomTriplet');
@@ -49,8 +55,13 @@ async function loadRandomTriplet() {
     const status = document.getElementById('reviewStatus');
     status.textContent = 'Loading new triplet group...';
     
+    if (!reviewSession || !reviewSession.id) {
+        status.textContent = 'Error: No active review session';
+        return;
+    }
+    
     try {
-        const response = await fetch('/api/random-triplet');
+        const response = await fetch(`/api/random-triplet?session_id=${encodeURIComponent(reviewSession.id)}`);
         
         if (!response.ok) {
             const errorText = await response.text();
@@ -376,6 +387,7 @@ function updateSessionUI() {
         
         document.getElementById('reviewStatus').textContent = 
             `Session active for ${reviewSession.name}. Click "Load Random Triplet" to start reviewing.`;
+        loadReviewProgress();
     } else {
         document.getElementById('reviewerSetup').style.display = 'block';
         document.getElementById('activeSession').style.display = 'none';
@@ -383,9 +395,26 @@ function updateSessionUI() {
     }
 }
 
-function generateSessionId() {
-    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+async function loadReviewProgress() {
+    try {
+        const response = await fetch('/api/review-progress');
+        if (response.ok) {
+            const progress = await response.json();
+            if (progress.success) {
+                const statusEl = document.getElementById('reviewStatus');
+                statusEl.innerHTML = `
+                    Session: ${reviewSession.name}<br>
+                    Progress: ${progress.reviewed}/${progress.total_abstracts} reviewed (${progress.progress_percentage}%)<br>
+                    Available: ${progress.available} abstracts ready for review
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading progress:', error);
+    }
 }
+
+
 
 const originalLoadRandomTriplet = loadRandomTriplet;
 loadRandomTriplet = async function() {

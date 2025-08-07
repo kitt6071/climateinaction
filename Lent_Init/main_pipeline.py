@@ -134,7 +134,7 @@ async def run_main_pipeline_logic(args):
     
     chunk = []
     
-    batch_size = 100
+    batch_size = 1000
     skip_rows = 0
     processed_count = 0 
     total_scanned = 0
@@ -328,7 +328,7 @@ async def run_main_pipeline_logic(args):
                         
                         if should_backfill:
                             logger.info("Target reached - triggering backfill optimization")                            
-                            target_successful_abstracts = len(chunk)
+                            target_successful_abstracts = max_limit if max_limit != float('inf') else len(chunk)
                             successful_abstracts = []
                             failed_abstracts = []
                             
@@ -351,7 +351,7 @@ async def run_main_pipeline_logic(args):
                             logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
                             
                             backfill_attempts = 0
-                            max_backfill_attempts = 5
+                            max_backfill_attempts = 10
                             
                             while len(successful_abstracts) < target_successful_abstracts and backfill_attempts < max_backfill_attempts:
                                 remaining_relevant = []
@@ -620,6 +620,9 @@ async def process_abstract_chunk(
             'title': abstract_data['title']
         })
     
+    # create DOI to abstract mapping for IUCN classification
+    doi_to_abstract = {detail['doi']: detail['abstract_text'] for detail in details}
+    
     raw_triplets = []
     if summary_tasks:
         logger.info(f"Generating summaries for {len(summary_tasks)} abstracts")
@@ -673,20 +676,21 @@ async def process_abstract_chunk(
         needs_iucn = not is_valid or not (code and name) or code == "12.1"
 
         if needs_iucn:
-            cache_key = f"iucn_classify_json_schema:{final_desc}|context:{s}|{p}"
+            abstract_text = doi_to_abstract.get(d, None)
+            cache_key = f"iucn_classify_json_schema:{final_desc}|context:{s}|{p}|abstract:{bool(abstract_text)}"
             cached = refinement_cache.get(cache_key)
             if cached:
                 cached_code, cached_name = cached
                 refined_o = f"{final_desc} [IUCN: {cached_code} {cached_name}]"
                 pre_enriched[idx] = (s, p, refined_o, d)
             else:
-                iucn_items.append((s, p, final_desc, original_o, idx))
+                iucn_items.append((s, p, final_desc, original_o, idx, abstract_text))
         else:
             refined_o = f"{final_desc} [IUCN: {code} {name}]"
             pre_enriched[idx] = (s, p, refined_o, d)
     
     iucn_tasks = [
-        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache) 
+        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5]) 
         for item in iucn_items
     ]
     
@@ -697,7 +701,7 @@ async def process_abstract_chunk(
         iucn_results = await asyncio.gather(*iucn_tasks)
         logger.info("IUCN classification done")
         for i, (code, name) in enumerate(iucn_results):
-            s_iucn, p_iucn, desc_iucn, _orig_o, orig_idx = iucn_items[i]
+            s_iucn, p_iucn, desc_iucn, _orig_o, orig_idx, _abstract = iucn_items[i]
             refined_o = f"{desc_iucn} [IUCN: {code} {name}]"
             enriched_triplets[orig_idx] = (s_iucn, p_iucn, refined_o, raw_triplets[orig_idx][3])
     
