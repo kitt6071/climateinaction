@@ -351,7 +351,7 @@ async def run_main_pipeline_logic(args):
                             logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
                             
                             backfill_attempts = 0
-                            max_backfill_attempts = 10
+                            max_backfill_attempts = 15
                             
                             while len(successful_abstracts) < target_successful_abstracts and backfill_attempts < max_backfill_attempts:
                                 remaining_relevant = []
