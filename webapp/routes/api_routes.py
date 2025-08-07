@@ -419,9 +419,30 @@ def submit_review():
         with open(file_path, 'a') as f:
             f.write(json.dumps(review_data) + '\n')
         
+        session_id = review_data.get('reviewer', {}).get('session_id')
+        if session_id:
+            try:
+                if os.path.exists(ASSIGNMENTS_FILE):
+                    with open(ASSIGNMENTS_FILE, 'r') as f:
+                        assignments = json.load(f)
+                    
+                    if session_id in assignments:
+                        reviewed_doi = review_data['group_doi'].lower().strip()
+                        assignments[session_id]['dois'] = [
+                            assignment for assignment in assignments[session_id]['dois']
+                            if assignment['doi'] != reviewed_doi
+                        ]
+                        
+                        with open(ASSIGNMENTS_FILE, 'w') as f:
+                            json.dump(assignments, f)
+                        
+                        logger.info(f"Cleared assignment for DOI {reviewed_doi} from session {session_id}")
+            except Exception as e:
+                logger.error(f"Error clearing assignment: {e}")
+        
         reviewer_name = review_data.get('reviewer', {}).get('name', 'Anonymous')
-        session_id = review_data.get('reviewer', {}).get('session_id', 'N/A')
-        logger.info(f"Review for DOI {review_data['group_doi']} by {reviewer_name} (Session: {session_id}) saved to {file_path}")
+        session_id_display = review_data.get('reviewer', {}).get('session_id', 'N/A')
+        logger.info(f"Review for DOI {review_data['group_doi']} by {reviewer_name} (Session: {session_id_display}) saved to {file_path}")
         
         return jsonify({"success": True, "message": "Review submitted successfully"})
         
