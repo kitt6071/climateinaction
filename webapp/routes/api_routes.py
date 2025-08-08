@@ -420,23 +420,33 @@ def submit_review():
             f.write(json.dumps(review_data) + '\n')
         
         session_id = review_data.get('reviewer', {}).get('session_id')
+        reviewed_doi = review_data['group_doi'].lower().strip()
+        
         if session_id:
             try:
                 if os.path.exists(ASSIGNMENTS_FILE):
                     with open(ASSIGNMENTS_FILE, 'r') as f:
                         assignments = json.load(f)
                     
+                    # Remove from this session's assignments
                     if session_id in assignments:
-                        reviewed_doi = review_data['group_doi'].lower().strip()
+                        before_count = len(assignments[session_id].get('dois', []))
                         assignments[session_id]['dois'] = [
                             assignment for assignment in assignments[session_id]['dois']
                             if assignment['doi'] != reviewed_doi
                         ]
+                        after_count = len(assignments[session_id]['dois'])
+                        
+                        for sid, session_data in assignments.items():
+                            session_data['dois'] = [
+                                assignment for assignment in session_data.get('dois', [])
+                                if assignment['doi'] != reviewed_doi
+                            ]
                         
                         with open(ASSIGNMENTS_FILE, 'w') as f:
                             json.dump(assignments, f)
                         
-                        logger.info(f"Cleared assignment for DOI {reviewed_doi} from session {session_id}")
+                        logger.info(f"Cleared assignment for DOI {reviewed_doi} from session {session_id} (removed {before_count - after_count} assignments)")
             except Exception as e:
                 logger.error(f"Error clearing assignment: {e}")
         
@@ -463,13 +473,14 @@ def get_review_progress():
         
         reviewed_dois = get_reviewed_dois()
         assigned_dois = get_assigned_dois()
+        clean_assigned = assigned_dois - reviewed_dois
         
         return jsonify({
             "success": True,
             "total_abstracts": total_dois,
             "reviewed": len(reviewed_dois),
-            "assigned": len(assigned_dois),
-            "available": total_dois - len(reviewed_dois) - len(assigned_dois),
+            "assigned": len(clean_assigned),
+            "available": total_dois - len(reviewed_dois) - len(clean_assigned),
             "progress_percentage": round((len(reviewed_dois) / total_dois * 100), 1) if total_dois > 0 else 0
         })
         
