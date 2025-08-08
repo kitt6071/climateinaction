@@ -512,14 +512,19 @@ def get_review_stats():
 def clear_reviews():
     try:
         reviews_file_path = "/webapp/data/reviews/triplet_reviews.jsonl"
+        assignments_file_path = ASSIGNMENTS_FILE
         
         if os.path.exists(reviews_file_path):
             os.remove(reviews_file_path)
             logger.info(f"All reviews have been cleared. File deleted: {reviews_file_path}")
-            return jsonify({"success": True, "message": "All reviews have been successfully cleared."})
         else:
             logger.info("Clear reviews called, but no review file to delete.")
-            return jsonify({"success": True, "message": "No reviews found to clear."})
+
+        if os.path.exists(assignments_file_path):
+            os.remove(assignments_file_path)
+            logger.info(f"All assignments have been cleared. File deleted: {assignments_file_path}")
+
+        return jsonify({"success": True, "message": "All reviews and assignments have been cleared."})
             
     except Exception as e:
         logger.error(f"Error clearing reviews: {e}", exc_info=True)
