@@ -13,7 +13,7 @@ from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifie
                              predict_relevance_local, classify_abstract_relevance_ollama, 
                              setup_embedding_classifier, predict_relevance_embeddings)
 from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples, classify_threat_for_subject
-from .triplet_extraction import verify_triplets, normalize_species_names, convert_to_summary, extract_entities_concurrently, generate_relationships_concurrently
+from .triplet_extraction import verify_triplets, normalize_species_names, convert_to_summary, extract_entities_concurrently, generate_relationships_concurrently, consolidate_triplets
 from .llm_api_utility import enable_metrics_tracking, log_metrics_summary
 from .graph_analysis import (build_global_graph, analyze_graph_detailed, 
                            enrich_graph_with_embeddings, 
@@ -636,7 +636,7 @@ async def process_abstract_chunk(
                 abs_text = current['abstract_text']
                 doi = current['doi']
 
-                if summary_text: 
+                if summary_text:
                     async def process_single(abstract_content, doi_val, llm_s):
                         logger.info(f"Extracting entities for {doi_val}")
                         entities = await extract_entities_concurrently(abstract_content, llm_s)
@@ -647,7 +647,8 @@ async def process_abstract_chunk(
                         else:
                             logger.warning(f"No entities for {doi_val}: {abstract_content[:50]}")
                             return []
-                    p2_tasks.append(process_single(abs_text, doi, llm_setup))
+                    text_for_extraction = summary_text if summary_text and summary_text.strip() else abs_text
+                    p2_tasks.append(process_single(text_for_extraction, doi, llm_setup))
                 else:
                     logger.warning(f"No summary for {doi}")
             else:

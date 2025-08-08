@@ -70,7 +70,9 @@ def get_assigned_dois():
         assigned = set()
         for session_data in active_assignments.values():
             for assignment in session_data.get('dois', []):
-                assigned.add(assignment['doi'])
+                doi_val = str(assignment.get('doi', '')).lower().strip()
+                if doi_val:
+                    assigned.add(doi_val)
         
         return assigned
     except Exception as e:
@@ -102,13 +104,11 @@ def track_doi_assignment(session_id, doi):
         
         if session_id not in assignments:
             assignments[session_id] = {'dois': []}
-        
-        session_dois = {assignment['doi'] for assignment in assignments[session_id]['dois']}
-        if doi not in session_dois:
-            assignments[session_id]['dois'].append({
-                'doi': doi,
-                'timestamp': datetime.utcnow().timestamp()
-            })
+
+        assignments[session_id]['dois'] = [{
+            'doi': str(doi).lower().strip(),
+            'timestamp': datetime.utcnow().timestamp()
+        }]
         
         with open(ASSIGNMENTS_FILE, 'w') as f:
             json.dump(assignments, f)
@@ -352,6 +352,11 @@ def get_random_triplet():
         assigned_dois = get_assigned_dois()
         session_assigned = get_session_assigned_dois(session_id)
         
+        valid_dois = [d.lower().strip() for d in valid_dois]
+        reviewed_dois = {d.lower().strip() for d in reviewed_dois}
+        assigned_dois = {d.lower().strip() for d in assigned_dois}
+        session_assigned = {d.lower().strip() for d in session_assigned}
+
         available_dois = [doi for doi in valid_dois 
                          if doi not in reviewed_dois 
                          and (doi not in assigned_dois or doi in session_assigned)]
@@ -473,6 +478,8 @@ def get_review_progress():
         
         reviewed_dois = get_reviewed_dois()
         assigned_dois = get_assigned_dois()
+        reviewed_dois = {d.lower().strip() for d in reviewed_dois}
+        assigned_dois = {d.lower().strip() for d in assigned_dois}
         clean_assigned = assigned_dois - reviewed_dois
         
         return jsonify({
