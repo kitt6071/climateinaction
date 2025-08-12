@@ -25,6 +25,82 @@ from .setup import setup_llm, setup_vector_search
 
 logger = logging.getLogger("pipeline")
 
+def has_shorebird_keywords(text):
+    text_lower = text.lower()
+    
+    if any(exclude in text_lower for exclude in [
+        'root-knot', 'root knot', 'nematode', 'nematodos', 'plover cove', 
+        'plover lake', 'plover point', 'plover bay', 'reservoir', 
+        'virtual client', 'ceramic sherd', 'escurrimiento', 'sedimentos', 
+        'comunidades de a', 'haematococcus pluvialis', 'knot sandpiper', 'great knot'
+    ]):
+        return False
+        
+    import re
+
+    specific_terms = [
+'shorebird', 'shore bird', 'wader', 'wading bird', 'shorebirds'
+
+# Major Shorebird Families (Common Names)
+'sandpiper', 'plover', 'godwit', 'curlew', 'turnstone', 'oystercatcher',
+'avocet', 'stilt', 'phalarope', 'snipe', 'woodcock', 'jacana', # Though Jacanas are sometimes grouped, they're distinct
+'thick-knee', # Often associated with waders
+'pratincole', 'courser', # Sometimes grouped with plovers/waders
+
+# Specific Genera (Scientific Names - often useful for more precise searching)
+'Calidris',      # Sandpipers (e.g., Dunlin, Sanderling, Knot, Stints)
+'Tringa',        # Yellowlegs, Tattlers, Godwits (some species)
+'Charadrius',    # Plovers (e.g., Ringed Plover, Kentish Plover, Snowy Plover)
+'Pluvialis',     # Golden Plovers, Grey Plover
+'Numenius',      # Curlews, Whimbrel
+'Limosa',        # Godwits
+'Arenaria',      # Turnstones
+'Haematopus',    # Oystercatchers
+'Recurvirostra', # Avocets
+'Himantopus',    # Stilts
+'Phalaropus',    # Phalaropes
+'Gallinago',     # Snipes
+'Scolopax',      # Woodcocks
+'Actitis',       # Sandpipers (e.g., Common Sandpiper, Spotted Sandpiper)
+'Limnodromus',   # Dowitchers
+'Aphriza',       # Surfbird
+'Heteroscelus',  # Wandering Tattler, Grey-tailed Tattler
+'Xenus',         # Terek Sandpiper
+'Prosobonia',    # Polynesian Sandpipers (extinct/endangered)
+
+# Specific Species (Common Names - a good selection of diverse types)
+'sanderling', 'dunlin', 'knot', 'stint', 'little stint', 'temminck\'s stint',
+'semipalmated sandpiper', 'western sandpiper', 'least sandpiper',
+'peep', # Collective term for small Calidris sandpipers
+'yellowlegs', 'greater yellowlegs', 'lesser yellowlegs',
+'dowitcher', 'long-billed dowitcher', 'short-billed dowitcher',
+'common snipe', 'jack snipe', 'great snipe',
+'eurasian curlew', 'whimbrel', 'bristle-thighed curlew',
+'bar-tailed godwit', 'black-tailed godwit', 'marbled godwit', 'hudsonian godwit',
+'red knot', 'great knot',
+'ruddy turnstone', 'black turnstone',
+'common ringed plover', 'kentish plover', 'snowy plover', 'piping plover',
+'killdeer', 'dotterel', 'mountain plover', 'pacific golden plover', 'european golden plover',
+'grey plover', 'black-bellied plover',
+'eurasian oystercatcher', 'american oystercatcher', 'black oystercatcher',
+'pied avocet', 'american avocet',
+'black-necked stilt', 'pied stilt',
+'red-necked phalarope', 'grey phalarope', 'wilson\'s phalarope',
+'common sandpiper', 'spotted sandpiper',
+'wood sandpiper', 'green sandpiper', 'marsh sandpiper',
+'greenshank', 'redshank', 'spotted redshank',
+'terek sandpiper', 'surfbird', 'wandering tattler', 'grey-tailed tattler',
+'stone-curlew', 'eurasian thick-knee',
+'cream-colored courser', 'collared pratincole',
+
+# Unique Characteristics/Behaviors
+'long-legged', 'long-billed', 'short-billed', 'upturned bill', 'downcurved bill']
+    
+    for term in specific_terms:
+        if re.search(r'\b' + term + r's?\b', text_lower):
+            return True
+    return False
+
 async def check_for_primary_evidence(abstract: str, llm_setup: dict) -> dict:
     import json
     
@@ -138,6 +214,61 @@ Schema:
     except Exception as e:
         logger.error(f"Error in impact/conservation gate: {e}")
         return False
+
+async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
+    if not batch_items:
+        return []
+        
+    logger.info(f"Batch relevance check for {len(batch_items)} abstracts")
+    
+    if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
+        logger.info(f"Using batch embeddings classification for {len(batch_items)} abstracts")
+        abstracts_for_ml = [item['abstract'] for item in batch_items]
+        batch_results = predict_relevance_embeddings_batch(abstracts_for_ml, embed_model, embed_classifier, threshold=0.70)
+        
+        results = []
+        for i, (item, (is_relevant, score)) in enumerate(zip(batch_items, batch_results)):
+            if not is_relevant and has_shorebird_keywords(f"{item['title']} {item['abstract']}"):
+                logger.info(f"KEYWORD RESCUE: Low relevance ({score:.3f}) but has shorebird keywords: '{item['title'][:50]}...'")
+                results.append((True, score))
+            else:
+                results.append((is_relevant, score))
+        return results
+        
+    elif legacy_classifier and vectorizer:
+        logger.info(f"Using TF-IDF batch classification for {len(batch_items)} abstracts")
+        results = []
+        for item in batch_items:
+            is_relevant = predict_relevance_local(item['abstract'], vectorizer, legacy_classifier)
+            vec_text = vectorizer.transform([item['abstract']])
+            probabilities = legacy_classifier.predict_proba(vec_text)[0]
+            relevance_score = probabilities[1]
+            
+            if not is_relevant and has_shorebird_keywords(f"{item['title']} {item['abstract']}"):
+                logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{item['title'][:50]}...'")
+                results.append((True, relevance_score))
+            else:
+                results.append((is_relevant, relevance_score))
+        return results
+    else:
+        logger.info(f"Using LLM fallback for {len(batch_items)} abstracts")
+        llm_tasks = []
+        for item in batch_items:
+            llm_tasks.append(classify_abstract_relevance_ollama(item['title'], item['abstract'], llm_setup))
+        
+        if llm_tasks:
+            llm_results = await asyncio.gather(*llm_tasks)
+            results = []
+            for item, is_relevant in zip(batch_items, llm_results):
+                relevance_score = 1.0 if is_relevant else 0.0
+                if not is_relevant and has_shorebird_keywords(f"{item['title']} {item['abstract']}"):
+                    logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{item['title'][:50]}...'")
+                    results.append((True, relevance_score))
+                else:
+                    results.append((is_relevant, relevance_score))
+            return results
+        else:
+            return [(False, 0.0)] * len(batch_items)
 
 async def run_main_pipeline_logic(args):
     start_time = time.time()
@@ -255,81 +386,7 @@ async def run_main_pipeline_logic(args):
     logger.info(f"Starting data load from parquet (batch: {batch_size}, max: {max_limit if max_limit != float('inf') else 'all'}, chunk: {BATCH_CONFIG['processing_batch_size']})")
     irrelevant_file = results_path / "irrelevant_abstracts.jsonl"
 
-    def has_shorebird_keywords(text):
-        text_lower = text.lower()
-        
-        if any(exclude in text_lower for exclude in [
-            'root-knot', 'root knot', 'nematode', 'nematodos', 'plover cove', 
-            'plover lake', 'plover point', 'plover bay', 'reservoir', 
-            'virtual client', 'ceramic sherd', 'escurrimiento', 'sedimentos', 
-            'comunidades de a', 'haematococcus pluvialis', 'knot sandpiper', 'great knot'
-        ]):
-            return False
-            
-        import re
 
-        specific_terms = [
-    'shorebird', 'shore bird', 'wader', 'wading bird', 'shorebirds'
-
-    # Major Shorebird Families (Common Names)
-    'sandpiper', 'plover', 'godwit', 'curlew', 'turnstone', 'oystercatcher',
-    'avocet', 'stilt', 'phalarope', 'snipe', 'woodcock', 'jacana', # Though Jacanas are sometimes grouped, they're distinct
-    'thick-knee', # Often associated with waders
-    'pratincole', 'courser', # Sometimes grouped with plovers/waders
-
-    # Specific Genera (Scientific Names - often useful for more precise searching)
-    'Calidris',      # Sandpipers (e.g., Dunlin, Sanderling, Knot, Stints)
-    'Tringa',        # Yellowlegs, Tattlers, Godwits (some species)
-    'Charadrius',    # Plovers (e.g., Ringed Plover, Kentish Plover, Snowy Plover)
-    'Pluvialis',     # Golden Plovers, Grey Plover
-    'Numenius',      # Curlews, Whimbrel
-    'Limosa',        # Godwits
-    'Arenaria',      # Turnstones
-    'Haematopus',    # Oystercatchers
-    'Recurvirostra', # Avocets
-    'Himantopus',    # Stilts
-    'Phalaropus',    # Phalaropes
-    'Gallinago',     # Snipes
-    'Scolopax',      # Woodcocks
-    'Actitis',       # Sandpipers (e.g., Common Sandpiper, Spotted Sandpiper)
-    'Limnodromus',   # Dowitchers
-    'Aphriza',       # Surfbird
-    'Heteroscelus',  # Wandering Tattler, Grey-tailed Tattler
-    'Xenus',         # Terek Sandpiper
-    'Prosobonia',    # Polynesian Sandpipers (extinct/endangered)
-
-    # Specific Species (Common Names - a good selection of diverse types)
-    'sanderling', 'dunlin', 'knot', 'stint', 'little stint', 'temminck\'s stint',
-    'semipalmated sandpiper', 'western sandpiper', 'least sandpiper',
-    'peep', # Collective term for small Calidris sandpipers
-    'yellowlegs', 'greater yellowlegs', 'lesser yellowlegs',
-    'dowitcher', 'long-billed dowitcher', 'short-billed dowitcher',
-    'common snipe', 'jack snipe', 'great snipe',
-    'eurasian curlew', 'whimbrel', 'bristle-thighed curlew',
-    'bar-tailed godwit', 'black-tailed godwit', 'marbled godwit', 'hudsonian godwit',
-    'red knot', 'great knot',
-    'ruddy turnstone', 'black turnstone',
-    'common ringed plover', 'kentish plover', 'snowy plover', 'piping plover',
-    'killdeer', 'dotterel', 'mountain plover', 'pacific golden plover', 'european golden plover',
-    'grey plover', 'black-bellied plover',
-    'eurasian oystercatcher', 'american oystercatcher', 'black oystercatcher',
-    'pied avocet', 'american avocet',
-    'black-necked stilt', 'pied stilt',
-    'red-necked phalarope', 'grey phalarope', 'wilson\'s phalarope',
-    'common sandpiper', 'spotted sandpiper',
-    'wood sandpiper', 'green sandpiper', 'marsh sandpiper',
-    'greenshank', 'redshank', 'spotted redshank',
-    'terek sandpiper', 'surfbird', 'wandering tattler', 'grey-tailed tattler',
-    'stone-curlew', 'eurasian thick-knee',
-    'cream-colored courser', 'collared pratincole',
-
-    # Unique Characteristics/Behaviors
-    'long-legged', 'long-billed', 'short-billed', 'upturned bill', 'downcurved bill']
-        
-        for term in specific_terms:
-            if re.search(r'\b' + term + r's?\b', text_lower):
-                return True
-        return False
 
     async def check_relevance(title, abstract, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
         # try embedding classifier first
