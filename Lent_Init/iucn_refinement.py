@@ -451,7 +451,7 @@ What is the primary research focus and study type?"""
     response_result = await llm_generate(
         prompt=prompt,
         system=system_prompt,
-        model=llm_setup.get("model", "google/gemini-2.0-flash-001"),
+        model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
         temp=0.1,
         format=detection_schema,
         llm_setup=llm_setup,

@@ -351,7 +351,7 @@ async def run_main_pipeline_logic(args):
                             logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
                             
                             backfill_attempts = 0
-                            max_backfill_attempts = 15
+                            max_backfill_attempts = 10
                             
                             while len(successful_abstracts) < target_successful_abstracts and backfill_attempts < max_backfill_attempts:
                                 remaining_relevant = []
@@ -362,36 +362,55 @@ async def run_main_pipeline_logic(args):
                                         remaining_relevant.append(batch_items[i])
                                 
                                 if not remaining_relevant:
-                                    logger.info(f"Current batch exhausted, scanning for more abstracts (attempt {backfill_attempts + 1})")
+                                    logger.info(f"Current batch exhausted, scanning for more relevant abstracts (attempt {backfill_attempts + 1})")
                                     
-                                    backfill_df = load_data_with_offset("shorebirds.parquet", skip_rows, batch_size)
-                                    if len(backfill_df) == 0:
-                                        logger.info("No more data available for backfill")
-                                        break
+                                    target_relevant_per_attempt = max_limit if max_limit != float('inf') else batch_size
+                                    found_relevant_count = 0
+                                    backfill_batch_size = 2000
                                     
-                                    backfill_items = []
-                                    for i, row_data in enumerate(backfill_df.iter_rows(named=True)):
-                                        abstract_text = row_data["abstract"]
-                                        title_text = row_data["title"]
-                                        doi_text = row_data.get("doi")
-                                        if not doi_text: continue
-                                        backfill_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
-                                    
-                                    if backfill_items:
-                                        backfill_tasks = []
-                                        for item in backfill_items:
-                                            backfill_tasks.append(
-                                                check_relevance(item['title'], item['abstract'], llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
-                                            )
+                                    while found_relevant_count < target_relevant_per_attempt:
+                                        backfill_df = load_data_with_offset("shorebirds.parquet", skip_rows, backfill_batch_size)
+                                        if len(backfill_df) == 0:
+                                            logger.info("No more data available for backfill")
+                                            break
                                         
-                                        backfill_results = await asyncio.gather(*backfill_tasks)
+                                        logger.info(f"Backfill scanning batch of {len(backfill_df)} abstracts (found {found_relevant_count}/{target_relevant_per_attempt} relevant so far)")
                                         
-                                        for i, (is_relevant, relevance_score) in enumerate(backfill_results):
-                                            if is_relevant:
-                                                remaining_relevant.append(backfill_items[i])
+                                        backfill_items = []
+                                        for i, row_data in enumerate(backfill_df.iter_rows(named=True)):
+                                            abstract_text = row_data["abstract"]
+                                            title_text = row_data["title"]
+                                            doi_text = row_data.get("doi")
+                                            if not doi_text: continue
+                                            if "captivity" in abstract_text.lower() or len(abstract_text) < 50:
+                                                continue
+                                            backfill_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
+                                        
+                                        if backfill_items:
+                                            backfill_tasks = []
+                                            for item in backfill_items:
+                                                backfill_tasks.append(
+                                                    check_relevance(item['title'], item['abstract'], llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+                                                )
+                                            
+                                            backfill_results = await asyncio.gather(*backfill_tasks)
+                                            
+                                            for i, (is_relevant, relevance_score) in enumerate(backfill_results):
+                                                if is_relevant:
+                                                    remaining_relevant.append(backfill_items[i])
+                                                    found_relevant_count += 1
+                                                    logger.info(f"BACKFILL RELEVANT #{found_relevant_count}: '{backfill_items[i]['title'][:50]}...'")
+                                                    
+                                                    if found_relevant_count >= target_relevant_per_attempt:
+                                                        break
+                                        
+                                        skip_rows += len(backfill_df)
+                                        total_scanned += len(backfill_df)
+                                        
+                                        if found_relevant_count >= target_relevant_per_attempt:
+                                            break
                                     
-                                    skip_rows += len(backfill_df)
-                                    total_scanned += len(backfill_df)
+                                    logger.info(f"Backfill attempt complete: found {found_relevant_count} relevant abstracts")
                                 
                                 if not remaining_relevant:
                                     logger.info(f"No more relevant abstracts available for replacement (attempt {backfill_attempts + 1})")
