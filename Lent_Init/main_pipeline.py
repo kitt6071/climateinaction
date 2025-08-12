@@ -9,12 +9,12 @@ import logging
 import time
 from .cache import Cache, SimpleCache
 from .setup import setup_pipeline_logging, get_dynamic_run_base_path, load_data_with_offset
-from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifier_components, 
-                             predict_relevance_local, classify_abstract_relevance_ollama, 
-                             setup_embedding_classifier, predict_relevance_embeddings)
+from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifier_components,
+                               predict_relevance_local, classify_abstract_relevance_ollama,
+                               setup_embedding_classifier, predict_relevance_embeddings, predict_relevance_embeddings_batch)
 from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples, classify_threat_for_subject, detect_threat_content_in_abstract
 from .triplet_extraction import verify_triplets, normalize_species_names, convert_to_summary, extract_entities_concurrently, generate_relationships_concurrently, consolidate_triplets
-from .llm_api_utility import enable_metrics_tracking, log_metrics_summary
+from .llm_api_utility import enable_metrics_tracking, log_metrics_summary, llm_generate
 from .graph_analysis import (build_global_graph, analyze_graph_detailed, 
                            enrich_graph_with_embeddings, 
                            create_embedding_visualization, analyze_hub_node,
@@ -24,6 +24,120 @@ from .wikispecies_utils import verify_species_with_wikispecies_concurrently, com
 from .setup import setup_llm, setup_vector_search
 
 logger = logging.getLogger("pipeline")
+
+async def check_for_primary_evidence(abstract: str, llm_setup: dict) -> dict:
+    import json
+    
+    gate_schema = {
+        "type": "object",
+        "properties": {
+            "primary_evidence_found": {
+                "type": "boolean",
+                "description": "True only if the abstract contains at least one sentence presenting a specific finding or result from a direct study."
+            },
+            "strongest_evidence_sentence": {
+                "type": "string",
+                "description": "The single best sentence from the abstract that represents a primary finding. If none, this must be an empty string."
+            }
+        },
+        "required": ["primary_evidence_found", "strongest_evidence_sentence"]
+    }
+
+    system_prompt = f"""You are an efficient data screener. Your only job is to determine if an abstract contains primary research findings.
+
+Scan the text for sentences that state a specific, quantitative, or observational result from the authors' own study. Look for phrases like "we found that," "results indicate," or sentences that directly report a measured outcome.
+
+Your entire decision is based on one question: Does this text contain a sentence that looks like a primary finding?
+
+Return a JSON object conforming to this schema.
+Schema:
+{json.dumps(gate_schema, indent=2)}"""
+
+    user_prompt = f"Abstract:\n\"\"\"\n{abstract}\n\"\"\"\n"
+
+    try:
+        response = await llm_generate(
+            prompt=user_prompt,
+            system=system_prompt,
+            model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
+            temp=0.1,
+            format_schema=gate_schema,
+            llm_setup=llm_setup
+        )
+        
+        if response:
+            try:
+                evidence_data = json.loads(response)
+                return evidence_data
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse evidence gate JSON response: {response[:100]}")
+                return {"primary_evidence_found": False, "strongest_evidence_sentence": ""}
+        else:
+            return {"primary_evidence_found": False, "strongest_evidence_sentence": ""}
+            
+    except Exception as e:
+        logger.error(f"Error in evidence gate: {e}")
+        return {"primary_evidence_found": False, "strongest_evidence_sentence": ""}
+
+async def check_for_impact_conservation_evidence(abstract: str, llm_setup: dict) -> bool:
+    import json
+    
+    gate_schema = {
+        "type": "object",
+        "properties": {
+            "impact_conservation_found": {
+                "type": "boolean",
+                "description": "True only if the abstract contains sentences describing measured impacts on species/ecosystems or conservation outcomes."
+            },
+            "strongest_impact_sentence": {
+                "type": "string", 
+                "description": "The single best sentence showing impact on species/ecosystems or conservation results. If none, this must be an empty string."
+            }
+        },
+        "required": ["impact_conservation_found", "strongest_impact_sentence"]
+    }
+
+    system_prompt = f"""You are scanning for specific types of evidence about impacts on wildlife or conservation outcomes.
+
+Look for sentences that describe:
+- Measured effects on species populations, behavior, or survival
+- Changes in habitat or ecosystem conditions  
+- Conservation intervention results or outcomes
+- Environmental stressor impacts on wildlife
+
+Find sentences that report specific impacts or conservation results, such as "population declined by X%," "habitat loss reduced nesting success," or "conservation efforts increased breeding pairs."
+
+Your task: Does this abstract contain a sentence describing a measured impact on species/ecosystems or a conservation outcome?
+
+Return a JSON object conforming to this schema.
+Schema:
+{json.dumps(gate_schema, indent=2)}"""
+
+    user_prompt = f"Abstract:\n\"\"\"\n{abstract}\n\"\"\"\n"
+
+    try:
+        response = await llm_generate(
+            prompt=user_prompt,
+            system=system_prompt,
+            model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
+            temp=0.1,
+            format_schema=gate_schema,
+            llm_setup=llm_setup
+        )
+        
+        if response:
+            try:
+                evidence_data = json.loads(response)
+                return evidence_data.get("impact_conservation_found", False)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse impact gate JSON response: {response[:100]}")
+                return False
+        else:
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in impact/conservation gate: {e}")
+        return False
 
 async def run_main_pipeline_logic(args):
     start_time = time.time()
@@ -297,16 +411,10 @@ async def run_main_pipeline_logic(args):
                  break
             continue
         
-        tasks = []
-        for item in batch_items:
-            tasks.append(
-                check_relevance(item['title'], item['abstract'], llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
-            )
-        
-        if tasks:
-            logger.info(f"Checking relevance for {len(tasks)} abstracts")
-            results = await asyncio.gather(*tasks)
-            logger.info("Relevance check done")
+        if batch_items:
+            logger.info(f"Checking relevance for {len(batch_items)} abstracts using optimized batch processing")
+            results = await check_relevance_batch_optimized(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+            logger.info("Batch relevance check done")
 
             for i, (is_relevant, relevance_score) in enumerate(results):
                 if is_relevant:
@@ -628,7 +736,7 @@ async def process_abstract_chunk(
     dois = [d.get('doi', 'N/A') for d in chunk]
     logger.debug(f"DOIs: {dois}")
 
-    logger.info(f"Pre-filtering {len(chunk)} abstracts for threat content with cheap model")
+    logger.info(f"Pre-filtering {len(chunk)} abstracts for impact/conservation evidence with cheap model")
     cheap_llm_setup = llm_setup.copy()
     cheap_llm_setup['model'] = 'qwen/qwen3-30b-a3b'
     
@@ -636,10 +744,9 @@ async def process_abstract_chunk(
     for abstract_data in chunk:
         abstract_text = abstract_data['abstract']
         threat_filter_tasks.append(
-            detect_threat_content_in_abstract(
+            check_for_impact_conservation_evidence(
                 abstract_text, 
-                cheap_llm_setup, 
-                refinement_cache
+                cheap_llm_setup
             )
         )
     
@@ -647,21 +754,51 @@ async def process_abstract_chunk(
         threat_filter_results = await asyncio.gather(*threat_filter_tasks)
         threat_containing_abstracts = []
         
-        for i, is_threat_relevant in enumerate(threat_filter_results):
-            if is_threat_relevant:  # Only keep abstracts that contain threats
+        for i, is_impact_relevant in enumerate(threat_filter_results):
+            if is_impact_relevant:
                 threat_containing_abstracts.append(chunk[i])
-                logger.info(f"THREAT CONTENT DETECTED in abstract {chunk[i]['doi']}")
+                logger.info(f"IMPACT/CONSERVATION EVIDENCE DETECTED in abstract {chunk[i]['doi']}")
             else:
-                logger.info(f"NO THREAT CONTENT in abstract {chunk[i]['doi']} - FILTERED OUT")
+                logger.info(f"NO IMPACT/CONSERVATION EVIDENCE in abstract {chunk[i]['doi']} - FILTERED OUT")
         
-        logger.info(f"Threat filter: {len(threat_containing_abstracts)}/{len(chunk)} abstracts contain threat content")
+        logger.info(f"Impact filter: {len(threat_containing_abstracts)}/{len(chunk)} abstracts contain impact/conservation evidence")
         
         if not threat_containing_abstracts:
-            logger.warning("No abstracts contain threat content after filtering")
+            logger.warning("No abstracts contain impact/conservation evidence after filtering")
             return [], {}
         
         # Replace chunk with filtered abstracts
         chunk = threat_containing_abstracts
+
+    logger.info(f"EVIDENCE GATE: Checking {len(chunk)} abstracts for primary research evidence")
+    evidence_filter_tasks = []
+    for abstract_data in chunk:
+        evidence_filter_tasks.append(
+            check_for_primary_evidence(
+                abstract_data['abstract'], 
+                cheap_llm_setup
+            )
+        )
+    
+    if evidence_filter_tasks:
+        evidence_results = await asyncio.gather(*evidence_filter_tasks)
+        primary_evidence_abstracts = []
+        
+        for i, evidence_result in enumerate(evidence_results):
+            if evidence_result.get("primary_evidence_found", False):
+                primary_evidence_abstracts.append(chunk[i])
+                strongest_sentence = evidence_result.get("strongest_evidence_sentence", "")
+                logger.info(f"PRIMARY EVIDENCE FOUND in {chunk[i]['doi']}: '{strongest_sentence[:100]}...'")
+            else:
+                logger.info(f"NO PRIMARY EVIDENCE in {chunk[i]['doi']} - FILTERED OUT")
+        
+        logger.info(f"Evidence gate: {len(primary_evidence_abstracts)}/{len(chunk)} abstracts contain primary research evidence")
+        
+        if not primary_evidence_abstracts:
+            logger.warning("No abstracts contain primary evidence after filtering")
+            return [], {}
+        
+        chunk = primary_evidence_abstracts
 
     summary_tasks = []
     details = [] 

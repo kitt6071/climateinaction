@@ -157,6 +157,32 @@ def predict_relevance_embeddings(abstract_text: str, model, classifier, threshol
         logger.error(f"Error in embedding relevance prediction: {e}")
         return False
 
+def predict_relevance_embeddings_batch(abstract_texts: List[str], model, classifier, threshold: float = 0.4) -> List[Tuple[bool, float]]:
+    if not model or not classifier:
+        logger.warning("Embedding classifier components not available")
+        return [(False, 0.0)] * len(abstract_texts)
+        
+    if not abstract_texts:
+        return []
+        
+    try:
+        embeddings = model.encode(abstract_texts, show_progress_bar=False)
+        
+        probabilities = classifier.predict_proba(embeddings)
+        relevance_scores = probabilities[:, 1]
+        is_relevant_batch = relevance_scores >= threshold
+        
+        results = []
+        for i, (is_relevant, relevance_score) in enumerate(zip(is_relevant_batch, relevance_scores)):
+            if relevance_score > 0.3:
+                logger.info(f"Embedding classifier batch[{i}]: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
+            results.append((bool(is_relevant), float(relevance_score)))
+        
+        return results
+    except Exception as e:
+        logger.error(f"Error in batch embedding relevance prediction: {e}")
+        return [(False, 0.0)] * len(abstract_texts)
+
 if __name__ == "__main__":
     from .main_pipeline import run_main_pipeline_logic, run_batch_enabled_pipeline, run_wikispecies_verification_logic, run_taxonomy_comparison_logic
 
