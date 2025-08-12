@@ -137,7 +137,7 @@ Schema:
             system=system_prompt,
             model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
             temp=0.1,
-            format_schema=gate_schema,
+            format=gate_schema,
             llm_setup=llm_setup
         )
         
@@ -197,7 +197,7 @@ Schema:
             system=system_prompt,
             model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
             temp=0.1,
-            format_schema=gate_schema,
+            format=gate_schema,
             llm_setup=llm_setup
         )
         
@@ -269,6 +269,39 @@ async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, e
             return results
         else:
             return [(False, 0.0)] * len(batch_items)
+
+async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
+    if not batch_items:
+        return []
+    
+    RELEVANCE_BATCH_SIZE = 50
+    MAX_RELEVANCE_WORKERS = 50
+    
+    sub_batches = []
+    for i in range(0, len(batch_items), RELEVANCE_BATCH_SIZE):
+        sub_batch = batch_items[i:i + RELEVANCE_BATCH_SIZE]
+        sub_batches.append(sub_batch)
+    
+    logger.info(f"Split {len(batch_items)} abstracts into {len(sub_batches)} sub-batches of ~{RELEVANCE_BATCH_SIZE} each")
+    
+    semaphore = asyncio.Semaphore(MAX_RELEVANCE_WORKERS)
+    
+    async def process_sub_batch(sub_batch):
+        async with semaphore:
+            logger.info(f"Worker processing batch of {len(sub_batch)} abstracts")
+            return await check_relevance_batch_optimized(sub_batch, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+    
+    tasks = [process_sub_batch(sub_batch) for sub_batch in sub_batches]
+    
+    logger.info(f"Starting {len(tasks)} parallel batch workers (max {MAX_RELEVANCE_WORKERS} concurrent)")
+    sub_results = await asyncio.gather(*tasks)
+    
+    all_results = []
+    for sub_result in sub_results:
+        all_results.extend(sub_result)
+    
+    logger.info(f"Parallel batch processing complete: {len(all_results)} results")
+    return all_results
 
 async def run_main_pipeline_logic(args):
     start_time = time.time()
@@ -469,9 +502,9 @@ async def run_main_pipeline_logic(args):
             continue
         
         if batch_items:
-            logger.info(f"Checking relevance for {len(batch_items)} abstracts using optimized batch processing")
-            results = await check_relevance_batch_optimized(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
-            logger.info("Batch relevance check done")
+            logger.info(f"Checking relevance for {len(batch_items)} abstracts using parallel batch workers")
+            results = await process_relevance_parallel_batches(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+            logger.info("Parallel batch relevance check done")
 
             for i, (is_relevant, relevance_score) in enumerate(results):
                 if is_relevant:
