@@ -275,7 +275,26 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model
         return []
     
     RELEVANCE_BATCH_SIZE = 10
-    MAX_RELEVANCE_WORKERS = 200
+    MAX_RELEVANCE_WORKERS = 30
+    
+    model_pool = []
+    if embed_model and embed_classifier and EMBEDDINGS_AVAILABLE:
+        logger.info(f"Creating pool of embeddings models for concurrent processing")
+        try:
+            from sentence_transformers import SentenceTransformer
+            pool_size = min(MAX_RELEVANCE_WORKERS, 30)
+            for i in range(pool_size):
+                model_instance = SentenceTransformer(embed_model.model_name_or_path if hasattr(embed_model, 'model_name_or_path') else 'all-mpnet-base-v2')
+                model_pool.append((model_instance, embed_classifier))
+            logger.info(f"Created {len(model_pool)} model instances")
+        except Exception as e:
+            logger.warning(f"Failed to create model pool: {e}, falling back to shared model")
+            model_pool = [(embed_model, embed_classifier)]
+    else:
+        model_pool = [(embed_model, embed_classifier)]
+    
+    import itertools
+    model_cycle = itertools.cycle(model_pool)
     
     sub_batches = []
     for i in range(0, len(batch_items), RELEVANCE_BATCH_SIZE):
@@ -286,12 +305,15 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model
     
     semaphore = asyncio.Semaphore(MAX_RELEVANCE_WORKERS)
     
-    async def process_sub_batch(sub_batch):
+    async def process_sub_batch(sub_batch, worker_model, worker_classifier):
         async with semaphore:
             logger.info(f"Worker processing batch of {len(sub_batch)} abstracts")
-            return await check_relevance_batch_optimized(sub_batch, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+            return await check_relevance_batch_optimized(sub_batch, llm_setup, worker_model, worker_classifier, vectorizer, legacy_classifier)
     
-    tasks = [process_sub_batch(sub_batch) for sub_batch in sub_batches]
+    tasks = []
+    for sub_batch in sub_batches:
+        worker_model, worker_classifier = next(model_cycle)
+        tasks.append(process_sub_batch(sub_batch, worker_model, worker_classifier))
     
     logger.info(f"Starting {len(tasks)} parallel batch workers (max {MAX_RELEVANCE_WORKERS} concurrent)")
     sub_results = await asyncio.gather(*tasks)
