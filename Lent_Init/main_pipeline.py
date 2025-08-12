@@ -274,8 +274,8 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model
     if not batch_items:
         return []
     
-    RELEVANCE_BATCH_SIZE = 50
-    MAX_RELEVANCE_WORKERS = 50
+    RELEVANCE_BATCH_SIZE = 10
+    MAX_RELEVANCE_WORKERS = 200
     
     sub_batches = []
     for i in range(0, len(batch_items), RELEVANCE_BATCH_SIZE):
