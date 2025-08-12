@@ -224,7 +224,7 @@ async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, e
     if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
         logger.info(f"Using batch embeddings classification for {len(batch_items)} abstracts")
         abstracts_for_ml = [item['abstract'] for item in batch_items]
-        batch_results = predict_relevance_embeddings_batch(abstracts_for_ml, embed_model, embed_classifier, threshold=0.70)
+        batch_results = await predict_relevance_embeddings_batch(abstracts_for_ml, embed_model, embed_classifier, threshold=0.70)
         
         results = []
         for i, (item, (is_relevant, score)) in enumerate(zip(batch_items, batch_results)):

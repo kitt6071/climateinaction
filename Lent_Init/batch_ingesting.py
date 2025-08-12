@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine_similarity
 import argparse
+import functools
+from concurrent.futures import ThreadPoolExecutor
 
 from .setup import setup_llm
 
@@ -30,6 +32,9 @@ try:
 except ImportError:
     print("Warning: sentence-transformers not available")
     EMBEDDINGS_AVAILABLE = False
+
+# Create a single thread pool executor for the entire application
+executor = ThreadPoolExecutor()
 
 def load_classifier_components(vectorizer_path: Path, classifier_path: Path):
     """Load classifier TF-IDF vectorizer and relevance classifier from files"""
@@ -157,7 +162,7 @@ def predict_relevance_embeddings(abstract_text: str, model, classifier, threshol
         logger.error(f"Error in embedding relevance prediction: {e}")
         return False
 
-def predict_relevance_embeddings_batch(abstract_texts: List[str], model, classifier, threshold: float = 0.4) -> List[Tuple[bool, float]]:
+async def predict_relevance_embeddings_batch(abstract_texts: List[str], model, classifier, threshold: float = 0.4) -> List[Tuple[bool, float]]:
     if not model or not classifier:
         logger.warning("Embedding classifier components not available")
         return [(False, 0.0)] * len(abstract_texts)
@@ -166,9 +171,14 @@ def predict_relevance_embeddings_batch(abstract_texts: List[str], model, classif
         return []
         
     try:
-        embeddings = model.encode(abstract_texts, show_progress_bar=False)
+        loop = asyncio.get_running_loop()
         
-        probabilities = classifier.predict_proba(embeddings)
+        encode_fn = functools.partial(model.encode, abstract_texts, show_progress_bar=False)
+        embeddings = await loop.run_in_executor(executor, encode_fn)
+        
+        predict_fn = functools.partial(classifier.predict_proba, embeddings)
+        probabilities = await loop.run_in_executor(executor, predict_fn)
+        
         relevance_scores = probabilities[:, 1]
         is_relevant_batch = relevance_scores >= threshold
         
