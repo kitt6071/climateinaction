@@ -630,7 +630,7 @@ async def process_abstract_chunk(
 
     logger.info(f"Pre-filtering {len(chunk)} abstracts for threat content with cheap model")
     cheap_llm_setup = llm_setup.copy()
-    cheap_llm_setup['model'] = 'google/gemini-2.0-flash-001'  # Cheapest/fastest model
+    cheap_llm_setup['model'] = 'qwen/qwen3-30b-a3b'
     
     threat_filter_tasks = []
     for abstract_data in chunk:

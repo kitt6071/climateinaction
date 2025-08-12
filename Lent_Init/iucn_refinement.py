@@ -458,23 +458,29 @@ What is the primary research focus and study type?"""
     )
 
     response_str = extract_content_from_result(response_result)
-    if response_str:
+    if response_str and response_str.strip():
         try:
             result_json = json.loads(response_str)
             primary_focus = result_json.get("primary_focus")
             study_type = result_json.get("study_type")
             
-            is_threat_relevant = (
-                primary_focus in ["impact_studies", "conservation_management"] and
-                study_type in ["empirical_field_study", "experimental_study", "observational_survey"]
-            )
-            
-            cache.set(cache_key, is_threat_relevant)
-            logger.info(f"Abstract focus: {primary_focus}, study type: {study_type}, relevant: {is_threat_relevant}")
-            return is_threat_relevant
+            if primary_focus and study_type:
+                is_threat_relevant = (
+                    primary_focus in ["impact_studies", "conservation_management"] and
+                    study_type in ["empirical_field_study", "experimental_study", "observational_survey"]
+                )
+                
+                cache.set(cache_key, is_threat_relevant)
+                logger.info(f"Abstract focus: {primary_focus}, study type: {study_type}, relevant: {is_threat_relevant}")
+                return is_threat_relevant
+            else:
+                logger.warning(f"Missing fields in threat detection response: focus={primary_focus}, type={study_type}")
             
         except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"Failed to parse threat detection JSON: {e}")
+            logger.warning(f"Failed to parse threat detection JSON: {e}. Response: '{response_str[:100] if response_str else 'None'}...'")
+    else:
+        logger.warning(f"Empty or invalid response from threat detection LLM")
     
+    logger.info("Threat detection failed - defaulting to INCLUDE abstract")
     cache.set(cache_key, True)
     return True
