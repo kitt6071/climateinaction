@@ -380,3 +380,101 @@ Analyze the following ecological interaction:
     fallback_result = {"classification": "neutral", "confidence": 0.0}
     cache.set(cache_key, fallback_result)
     return None
+
+
+async def detect_threat_content_in_abstract(abstract_text: str, llm_setup, cache: SimpleCache) -> bool:
+    """
+    Neutral detection of whether an abstract contains threat-related content.
+    Avoids the pink elephant problem by asking what the abstract is about, not if threats exist.
+    """
+    cache_key = f"abstract_threat_detection:{hash(abstract_text[:200])}"
+    cached_result = cache.get(cache_key)
+    if cached_result is not None:
+        logger.info(f"Abstract threat detection cache hit")
+        return cached_result
+    
+    detection_schema = {
+        "type": "object",
+        "properties": {
+            "primary_focus": {
+                "type": "string",
+                "enum": [
+                    "impact_studies", 
+                    "conservation_management", 
+                    "basic_ecology", 
+                    "methodology_review", 
+                    "theoretical_modeling"
+                ],
+                "description": "The primary research focus of this abstract"
+            },
+            "study_type": {
+                "type": "string", 
+                "enum": [
+                    "empirical_field_study",
+                    "experimental_study", 
+                    "observational_survey",
+                    "literature_review",
+                    "methodological_paper",
+                    "theoretical_analysis"
+                ],
+                "description": "The type of research approach used"
+            }
+        },
+        "required": ["primary_focus", "study_type"]
+    }
+    
+    system_prompt = """You are analyzing research abstracts to categorize their research focus and approach. Be completely objective.
+
+Classify the PRIMARY research focus:
+- **impact_studies**: Research examining effects, changes, influences, mortality, population dynamics, habitat changes, or species responses to factors
+- **conservation_management**: Studies about protection, restoration, management practices, policy, or conservation interventions  
+- **basic_ecology**: Fundamental ecological research, surveys, behavior, distribution, life history, or natural processes
+- **methodology_review**: Methods development, literature reviews, or technical/analytical discussions
+- **theoretical_modeling**: Mathematical models, simulations, or conceptual frameworks
+
+Classify the study type:
+- **empirical_field_study**: Field-based data collection and observation
+- **experimental_study**: Controlled experiments or manipulative studies
+- **observational_survey**: Surveys, monitoring, or descriptive observations
+- **literature_review**: Synthesis of existing research or meta-analysis
+- **methodological_paper**: Technical methods or analytical approaches
+- **theoretical_analysis**: Models, simulations, or conceptual work
+
+Focus only on what the research methodology and objectives actually are."""
+
+    prompt = f"""Analyze this research abstract and categorize its research focus and methodology:
+
+{abstract_text}
+
+What is the primary research focus and study type?"""
+
+    response_result = await llm_generate(
+        prompt=prompt,
+        system=system_prompt,
+        model=llm_setup.get("model", "google/gemini-2.0-flash-001"),
+        temp=0.1,
+        format=detection_schema,
+        llm_setup=llm_setup,
+    )
+
+    response_str = extract_content_from_result(response_result)
+    if response_str:
+        try:
+            result_json = json.loads(response_str)
+            primary_focus = result_json.get("primary_focus")
+            study_type = result_json.get("study_type")
+            
+            is_threat_relevant = (
+                primary_focus in ["impact_studies", "conservation_management"] and
+                study_type in ["empirical_field_study", "experimental_study", "observational_survey"]
+            )
+            
+            cache.set(cache_key, is_threat_relevant)
+            logger.info(f"Abstract focus: {primary_focus}, study type: {study_type}, relevant: {is_threat_relevant}")
+            return is_threat_relevant
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Failed to parse threat detection JSON: {e}")
+    
+    cache.set(cache_key, True)
+    return True

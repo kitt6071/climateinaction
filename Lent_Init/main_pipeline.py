@@ -12,7 +12,7 @@ from .setup import setup_pipeline_logging, get_dynamic_run_base_path, load_data_
 from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifier_components, 
                              predict_relevance_local, classify_abstract_relevance_ollama, 
                              setup_embedding_classifier, predict_relevance_embeddings)
-from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples, classify_threat_for_subject
+from .iucn_refinement import get_iucn_classification_json, parse_and_validate_object, cache_enriched_triples, classify_threat_for_subject, detect_threat_content_in_abstract
 from .triplet_extraction import verify_triplets, normalize_species_names, convert_to_summary, extract_entities_concurrently, generate_relationships_concurrently, consolidate_triplets
 from .llm_api_utility import enable_metrics_tracking, log_metrics_summary
 from .graph_analysis import (build_global_graph, analyze_graph_detailed, 
@@ -608,6 +608,41 @@ async def process_abstract_chunk(
     logger.info(f"Processing chunk of {len(chunk)} abstracts")
     dois = [d.get('doi', 'N/A') for d in chunk]
     logger.debug(f"DOIs: {dois}")
+
+    logger.info(f"Pre-filtering {len(chunk)} abstracts for threat content with cheap model")
+    cheap_llm_setup = llm_setup.copy()
+    cheap_llm_setup['model'] = 'google/gemini-2.0-flash-001'  # Cheapest/fastest model
+    
+    threat_filter_tasks = []
+    for abstract_data in chunk:
+        abstract_text = abstract_data['abstract']
+        threat_filter_tasks.append(
+            detect_threat_content_in_abstract(
+                abstract_text, 
+                cheap_llm_setup, 
+                refinement_cache
+            )
+        )
+    
+    if threat_filter_tasks:
+        threat_filter_results = await asyncio.gather(*threat_filter_tasks)
+        threat_containing_abstracts = []
+        
+        for i, is_threat_relevant in enumerate(threat_filter_results):
+            if is_threat_relevant:  # Only keep abstracts that contain threats
+                threat_containing_abstracts.append(chunk[i])
+                logger.info(f"THREAT CONTENT DETECTED in abstract {chunk[i]['doi']}")
+            else:
+                logger.info(f"NO THREAT CONTENT in abstract {chunk[i]['doi']} - FILTERED OUT")
+        
+        logger.info(f"Threat filter: {len(threat_containing_abstracts)}/{len(chunk)} abstracts contain threat content")
+        
+        if not threat_containing_abstracts:
+            logger.warning("No abstracts contain threat content after filtering")
+            return [], {}
+        
+        # Replace chunk with filtered abstracts
+        chunk = threat_containing_abstracts
 
     summary_tasks = []
     details = [] 
