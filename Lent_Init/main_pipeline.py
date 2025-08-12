@@ -274,19 +274,26 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model
     if not batch_items:
         return []
     
-    RELEVANCE_BATCH_SIZE = 10
-    MAX_RELEVANCE_WORKERS = 30
+    RELEVANCE_BATCH_SIZE = 100
+    MAX_RELEVANCE_WORKERS = 5
     
     model_pool = []
     if embed_model and embed_classifier and EMBEDDINGS_AVAILABLE:
         logger.info(f"Creating pool of embeddings models for concurrent processing")
         try:
             from sentence_transformers import SentenceTransformer
-            pool_size = min(MAX_RELEVANCE_WORKERS, 30)
-            for i in range(pool_size):
-                model_instance = SentenceTransformer(embed_model.model_name_or_path if hasattr(embed_model, 'model_name_or_path') else 'all-mpnet-base-v2')
-                model_pool.append((model_instance, embed_classifier))
-            logger.info(f"Created {len(model_pool)} model instances")
+            pool_size = min(MAX_RELEVANCE_WORKERS, 5)
+            model_pool.append((embed_model, embed_classifier))
+            
+            for i in range(pool_size - 1):
+                try:
+                    model_instance = SentenceTransformer(embed_model.model_name_or_path if hasattr(embed_model, 'model_name_or_path') else 'all-mpnet-base-v2')
+                    model_pool.append((model_instance, embed_classifier))
+                    logger.info(f"Created model instance {i+2}/{pool_size}")
+                except Exception as e:
+                    logger.warning(f"Failed to create model instance {i+2}: {e}")
+                    model_pool.append((embed_model, embed_classifier))
+            logger.info(f"Model pool complete: {len(model_pool)} instances")
         except Exception as e:
             logger.warning(f"Failed to create model pool: {e}, falling back to shared model")
             model_pool = [(embed_model, embed_classifier)]
