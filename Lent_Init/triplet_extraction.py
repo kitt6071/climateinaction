@@ -90,88 +90,70 @@ async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Option
                 "items": {"type": "string"},
                 "description": "List of distinct threat phrases or negative impacts"
             },
-            "reason": {
+            "evidence_sentences": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Verbatim sentences from abstract that provide clearest evidence of negative impact"
+            },
+            "reasoning": {
                 "type": "string",
-                "description": "Brief explanation of your reasoning for the species and threats identified"
+                "description": "Brief one-sentence explanation of your extraction decisions"
             }
         },
-        "required": ["species", "threats", "reason"]
+        "required": ["species", "threats", "evidence_sentences", "reasoning"]
     }
     
-    original_species_system_prompt = """
-        Extract specific species or taxonomic groups mentioned in the text.
-        Rules:
-        1. Only include species or taxonomic groups that are DIRECTLY mentioned in the text
-        2. Keep scientific names exactly as written
-        3. Each entry must be a single species or specific taxonomic group
-        4. Never combine multiple species into one entry (e.g., not "# bird species")
-        5. Remove any qualifiers like "spp." or species counts
-        6. If a scientific name is provided in the text, include it
-        7. Assign a confidence level (high, medium, low) based on how clearly the species is mentioned
-        """
-    
-    general_threat_extraction_rules = """
-        Extract NEGATIVE threats, stressors, or harm causes.
-        Include:
-        - Environmental stressors (climate, temperature, weather)
-        - Habitat issues (loss, degradation, fragmentation)
-        - Human activities (development, pollution, disturbance)
-        - Biological factors (predation, disease, competition)
-        - Resource limitations (food scarcity, nest sites)
-        
-        Strictly follow the rules below:
-        **Rules for Threat Extraction:**
-        1. Focus ONLY on factors that CAUSE HARM or NEGATIVELY impact species generally described in the abstract. The threat should be the *origin* of the negative effect.
-        2. Extract the *specific description of the CAUSE of harm or stressor* (e.g., "drowning in oil pits", "habitat loss from logging", "increasing shoreline development", "competition from invasive species", "severe aspergillosis", "mercury (Hg) exposure", "higher temperatures").
-        3. **DO NOT extract symptoms, effects, or consequences as threats.** For example, if a species "suffers mortality due to illegal hunting", the threat is "illegal hunting", NOT "mortality". If a species "experiences habitat loss leading to population decline", the threat is "habitat loss", NOT "population decline".
-        4. **DO NOT extract beneficial factors or the absence of a threat.** For example, do not extract "lack of predation" or "successful nesting" as a threat.
-        5. **DO NOT extract intrinsic demographic factors** (e.g., "small population size", "low reproductive success", "population decline") as threats. Focus on the *external drivers* that cause these conditions. If the abstract says a species is declining *due to* deforestation, the threat is "deforestation".
-        6. Only include threats DIRECTLY mentioned in the text as the *cause* of a negative outcome.
-        7. Do NOT attempt to classify the threat using IUCN categories here.
-        8. Do not try to link these threats to specific species *yet*. That will be a subsequent step.
-        9. **FIELD OBSERVATIONS ONLY:** Only extract threats that are based on actual field observations, monitoring, or documented cases in wild populations. Exclude laboratory studies, theoretical predictions, hypothetical scenarios, captive breeding studies, or domestic/farmed populations.
+    combined_system_prompt = f"""You are an expert scientific entity extractor focused on conservation biology. Your task is to analyze a scientific abstract and extract species, threats, and the evidence for them.
 
-        **Examples of Incorrect vs. Correct Threat Identification based on provided triplets:**
+Follow these steps precisely:
 
-        *   **Context:** "Ostrich suffer depression as a symptom of severe aspergillosis"
-            *   **Incorrect Threat Identification:** "depression" (This is a symptom)
-            *   **Correct Threat Identification:** "severe aspergillosis" (This is the cause of the symptom)
+**STEP 1: Assess Abstract Relevance**
+First, determine if the abstract contains documented negative impacts on a species (e.g., reduced survival, reproduction, population size, or habitat quality from field observations).
 
-        *   **Context:** "Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when temperatures are higher"
-            *   **Incorrect Threat Identification:** "overheating of eggs" (This is a consequence/effect)
-            *   **Correct Threat Identification:** "breeding later in the season when temperatures are higher" or "higher temperatures" (This is the cause)
+* **If NO,** do not proceed. Return an empty JSON object: {{"species": [], "threats": [], "evidence_sentences": [], "reasoning": "Abstract does not contain documented findings of negative impact."}}
+* **If YES,** proceed to Step 2.
 
-        *   **Context:** "Songbird experience impaired avian health due to mercury (Hg) exposure."
-            *   **Incorrect Threat Identification:** "impairs avian health" (This is a consequence/effect)
-            *   **Correct Threat Identification:** "mercury (Hg) exposure" (This is the cause)
+**Do NOT extract from abstracts that are primarily about:**
+- Survey methodology, detectability, or observer bias
+- Method comparisons or sampling design
+- Basic ecology or natural history without measured negative impact
+- Hypotheses, models, or theoretical risks NOT supported by study results
+- Laboratory studies or captive breeding studies
 
-        """
-    combined_system_prompt = f"""You are a scientific entity extraction expert. Perform the following two tasks based on the provided abstract:
-
-TASK 1: SPECIES EXTRACTION
 ---
-{original_species_system_prompt}
----
-List the species found under the "species" key in your JSON output (as a list of strings).
 
-TASK 2: THREAT EXTRACTION (General from Abstract)
----
-{general_threat_extraction_rules}
----
-List these general threat descriptions under the "threats" key in your JSON output (as a list of strings).
+**STEP 2: Extract Entities**
+If the abstract is relevant, perform the following extractions.
 
-TASK 3: REASONING
+**TASK A: SPECIES EXTRACTION**
+Extract specific species or taxonomic groups mentioned.
+- Only include species/groups directly mentioned in the text
+- Prefer specific named species (e.g., "Charadrius melodus") over aggregates ("shorebirds"), but extract the aggregate if it's all that is mentioned
+- Keep scientific names exactly as written
+- Do not combine multiple species into one entry
+- If the study groups multiple species (e.g., 'shorebirds', 'seabirds'), extract the aggregate term as written, but also *CRITICALLY* extract any individual species mentioned
+
+**TASK B: THREAT EXTRACTION**
+Extract the CAUSES of negative impacts (i.e., the threats).
+- **CRITICAL RULE:** A "threat" is the *origin* or *cause* of harm. DO NOT extract the symptoms, effects, or consequences.
+    - **Example 1:** If a species "suffers mortality due to illegal hunting", the threat is "illegal hunting", NOT "mortality".
+    - **Example 2:** If a species "experiences habitat loss leading to population decline", the threat is "habitat loss", NOT "population decline".
+    - **Example 3:** If birds "suffer from severe aspergillosis", the threat is "severe aspergillosis", NOT "suffering".
+- **BE SPECIFIC:** Capture the specific description of the threat (e.g., extract "habitat loss from logging", not just "habitat loss"; extract "mercury (Hg) exposure", not just "pollution").
+- Only extract threats documented by field observations or monitoring in wild populations, not from lab studies or theoretical models.
+
+**TASK C: EVIDENCE SENTENCES**
+Extract the verbatim sentence(s) from the abstract that provide the clearest evidence of the negative impact and link the species to the threat.
+
 ---
-Provide a brief explanation of your reasoning for the species and threats you identified in the "reason" field. Explain why you selected these specific entities and how they relate to the abstract's content.
+
+**STEP 3: Format Output**
+Return a single, valid JSON object with the extracted information. Provide a brief, one-sentence reasoning for your choices.
 
 Provide your complete output *only* as a single valid JSON object matching this schema:
 {json.dumps(entity_extraction_schema)}
 
-CRITICAL: Be extremely concise in all fields:
-- Threat descriptions: Use brief phrases (e.g., "habitat loss" not "widespread habitat loss due to urbanization")
-- Reasoning: Maximum 1-2 sentences total
-
-Do not include any other explanatory text or markdown around the JSON object.
+Do not add any text or markdown before or after the JSON object.
 """
     
     user_prompt = abstract_text
@@ -197,12 +179,14 @@ Do not include any other explanatory text or markdown around the JSON object.
         
         if isinstance(entities_data, dict) and \
            isinstance(entities_data.get("species"), list) and \
-           isinstance(entities_data.get("threats"), list):
+           isinstance(entities_data.get("threats"), list) and \
+           isinstance(entities_data.get("evidence_sentences"), list):
             if all(isinstance(s, str) for s in entities_data.get("species")) and \
-               all(isinstance(t, str) for t in entities_data.get("threats")):
-                reason = entities_data.get("reason", "No reasoning provided")
-                logger.info(f"P2.1: Successfully extracted {len(entities_data['species'])} species and {len(entities_data['threats'])} threats.")
-                logger.info(f"P2.1: Reasoning: {reason}")
+               all(isinstance(t, str) for t in entities_data.get("threats")) and \
+               all(isinstance(e, str) for e in entities_data.get("evidence_sentences")):
+                reasoning = entities_data.get("reasoning", "No reasoning provided")
+                logger.info(f"P2.1: Successfully extracted {len(entities_data['species'])} species, {len(entities_data['threats'])} threats, {len(entities_data['evidence_sentences'])} evidence sentences.")
+                logger.info(f"P2.1: Reasoning: {reasoning}")
                 return entities_data
             else:
                 logger.error(f"P2.1: Extracted lists contain non-string elements")
@@ -211,11 +195,13 @@ Do not include any other explanatory text or markdown around the JSON object.
             actual_data = entities_data["value"]
             if isinstance(actual_data.get("species"), list) and \
                isinstance(actual_data.get("threats"), list) and \
+               isinstance(actual_data.get("evidence_sentences"), list) and \
                all(isinstance(s, str) for s in actual_data.get("species")) and \
-               all(isinstance(t, str) for t in actual_data.get("threats")):
-                reason = actual_data.get("reason", "No reasoning provided")
-                logger.info(f"P2.1: Successfully extracted {len(actual_data['species'])} species and {len(actual_data['threats'])} threats (from 'value' key).")
-                logger.info(f"P2.1: Reasoning: {reason}")
+               all(isinstance(t, str) for t in actual_data.get("threats")) and \
+               all(isinstance(e, str) for e in actual_data.get("evidence_sentences")):
+                reasoning = actual_data.get("reasoning", "No reasoning provided")
+                logger.info(f"P2.1: Successfully extracted {len(actual_data['species'])} species, {len(actual_data['threats'])} threats, {len(actual_data['evidence_sentences'])} evidence sentences (from 'value' key).")
+                logger.info(f"P2.1: Reasoning: {reasoning}")
                 return actual_data
             else:
                 logger.error(f"P2.1: Unexpected structure in 'value' key")
@@ -254,66 +240,70 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
         }
     }
     system_prompt = (
-        """You are a specialized linguistic model. Your sole task is to generate a **Predicate** phrase. 
-            You will be given:
-            1. An Abstract (the source text).
-            2. A Subject (a specific species name from the abstract).
-            3. An Object (a specific threat phrase from the abstract, which is understood to be the CAUSE of harm).
-            Read the entire abstract to extract the maximum detail available about how the threat impacts the species, including biological mechanisms, timeframes, severity, and specific effects. 
-            Do not be vague or redundant and ensure the relation is a FULL PHRASE, and follow these rules strictly:
+        """You are an expert in scientific information extraction. Your task is to read a scientific abstract and extract structured species-threat relationship triplets.
 
-            **CRITICAL PREDICATE RULES:**
-            1.  **The `object` (threat) MUST be the CAUSE, and the `predicate` (impact) MUST be the EFFECT.** These two fields must describe different concepts. The threat is the external driver of harm; the impact is what happens to the species *as a result*.
-            2.  **DO NOT create redundant triplets.** The `predicate` cannot be the same as or mean the same thing as the `object`.
-                *   **INCORRECT:** `{"subject": "BirdA", "predicate": "is declining", "object": "population decline"}`
-                *   **CORRECT:** `{"subject": "BirdA", "predicate": "is declining due to", "object": "habitat loss"}`
-            3.  **The `subject` must be a species from the `Identified Species` list.**
-            4.  **The `object` must be a threat from the `Identified Threats` list.**
-            5.  **The `predicate` must be a meaningful phrase describing the impact.** It cannot be a single, non-descriptive word like "is" or "are".
-            6.  **BE SPECIFIC AND DETAILED:** Extract as much detail as the abstract provides about the impact mechanism. Use precise, descriptive language that captures the exact nature, timing, magnitude, and biological process of the impact. Include specific biological effects, timeframes, severity indicators, and causal pathways when mentioned in the abstract. Avoid vague terms like "affected by" or "impacted by".
-            7.  **Only create triplets for relationships explicitly supported by the abstract.**
-            8.  **FIELD OBSERVATIONS ONLY:** Only create triplets based on actual observations of wild populations, field studies, or documented real-world cases. Exclude laboratory experiments, theoretical models, or hypothetical predictions.
-            9.  **NO HYPOTHESES AS FACTS:** Do not create triplets from hypothetical statements, predictions, or speculation. Only extract relationships that are presented as observed facts or documented occurrences.
-            10. **HANDLE SPECIES GROUPS:** When an abstract discusses multiple related species under a group name (e.g., "waterbirds" including herons, egrets, bitterns), create specific triplets for each mentioned species AND the group if threats apply broadly.
+Follow these steps precisely:
 
-            **Examples of How to Form the Predicate (focus on NOT restating the Object):**
+## STEP 1: Assess Abstract Relevancy
 
-            1.  **Abstract Snippet:** \"Ostrich suffer depression as a symptom of severe aspergillosis\"
-                *   **Given Subject:** Ostrich
-                *   **Given Object (Threat):** severe aspergillosis
-                *   **VAGUE Predicate (avoid):** \"affected by\"
-                *   **DETAILED Predicate (use):** \"suffer depression as a symptom of\"
-                *   *(Resulting Triplet formed by your system: Ostrich suffer depression as a symptom of severe aspergillosis)*
-                *   **Incorrect Predicate (restates part/all of object):** \"is made ill by severe aspergillosis\"
+First, analyze the abstract to determine if it is suitable for extraction. You will extract triplets **ONLY IF ALL** of the following conditions are met:
+- The abstract reports **observed or quantified negative effects** on a species (e.g., mortality, reduced reproduction, population decline, habitat degradation).
+- The causal link is clear: a specific **threat causes an impact** on a species.
+- The work is based on **field observations** or documented real-world cases, not lab experiments or theoretical models.
 
-            2.  **Abstract Snippet:** \"Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when temperatures are higher\"
-                *   **Given Subject:** Little Tern
-                *   **Given Object (Threat):** higher temperatures
-                *   **VAGUE Predicate (avoid):** \"affected by\"
-                *   **DETAILED Predicate (use all available detail):** \"faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when exposed to\"
-                *   *(Resulting Triplet: Little Tern faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when exposed to higher temperatures)*
+**Do NOT extract triplets from abstracts that are primarily about:**
+- Survey methods, species detectability, or sampling design.
+- Hypotheses or predictions that were not confirmed by the study's results.
+- Basic species ecology unless a specific harm is measured and attributed.
 
-            3.  **Abstract Snippet:** \"Songbird experience impaired avian health due to mercury (Hg) exposure.\"
-                *   **Given Subject:** Songbird
-                *   **Given Object (Threat):** mercury (Hg) exposure
-                *   **Your Generated Predicate:** \"experience impaired avian health due to\"
-                *   *(Resulting Triplet: Songbird experience impaired avian health due to mercury (Hg) exposure)*
+If the abstract is not relevant, stop. Otherwise, proceed to Step 2.
 
-            4.  **Complex/Indirect Threat Example:** \"Shorebirds are at risk due to declining food availability from overfishing\"
-                *   **WRONG Predicate:** \"are at risk due to declining shorebirds\"
-                *   **CORRECT Predicate:** \"experience reduced food availability and population stress due to\"
-                *   **CORRECT Object:** \"overfishing\" (the underlying threat, not the declining food)
+---
 
-            For each relationship triplet, provide:
-            - predicate: The relationship/impact mechanism  
-            - reason: Brief explanation of why this relationship exists based on the abstract text
-            
-            CRITICAL: Be extremely concise:
-            - Subject/Object: Use exact names from provided lists only
-            - Predicate: Short phrase describing impact (e.g., "suffers mortality due to")
-            - Reason: Maximum 1 sentence explaining the relationship
-            
-            Output as a JSON array of objects. Do not include any explanatory text outside the JSON."""
+## STEP 2: Generate Relationship Triplets
+
+For each distinct negative relationship you identify, construct a triplet with a `subject`, `predicate`, and `object`.
+
+### Triplet Generation Rules:
+
+1. **Subject**: The specific species or taxonomic group being harmed (must be from provided species list).
+2. **Object**: The *cause* of the harm - the threat/external driver (must be from provided threats list).
+3. **Predicate**: The *effect* of the harm - detailed phrase describing what happens to the species *as a result of* the threat.
+
+**CRITICAL PREDICATE RULES:**
+* **The Predicate (effect) MUST NOT restate the Object (cause).** They must be distinct concepts.
+    * **INCORRECT**: `{"subject": "BirdA", "predicate": "experiences population decline", "object": "population decline"}`
+    * **CORRECT**: `{"subject": "BirdA", "predicate": "experiences population decline due to", "object": "widespread habitat loss"}`
+* **BE SPECIFIC AND DETAILED:** The predicate should capture the full mechanism of impact described in the abstract. Avoid vague terms like "is affected by." Instead, describe *how* it is affected.
+* **Deduplication Rules:** 
+    - If multiple similar impacts are mentioned for the same species-threat pair, create ONE comprehensive triplet that captures the primary effect.
+    - If distinctly different biological processes are affected (e.g., both survival AND reproduction), create separate triplets.
+    - Avoid near-identical triplets that essentially describe the same relationship.
+
+### Examples of High-Quality Predicates:
+
+* **Abstract Snippet**: "Little Tern faces increased risk of overheating of eggs, resulting from breeding later in the season when temperatures are higher."
+    * **Subject**: `Little Tern`
+    * **Object**: `higher temperatures`
+    * **Detailed Predicate**: `faces increased risk of overheating of eggs from breeding later in the season due to`
+
+* **Abstract Snippet**: "Songbird populations experience impaired avian health due to mercury (Hg) exposure from industrial runoff."
+    * **Subject**: `Songbird`
+    * **Object**: `mercury (Hg) exposure from industrial runoff`
+    * **Detailed Predicate**: `experience impaired avian health due to`
+
+For each relationship triplet, provide:
+- subject: Species name from provided list (use exact names from provided lists only)
+- predicate: Detailed relationship/impact mechanism capturing the full biological process, timing, severity, and causal pathway described in the abstract
+- object: Threat description from provided list (use exact names from provided lists only)
+- reason: Brief explanation of why this relationship exists based on the abstract text (maximum 1 sentence)
+
+CRITICAL: 
+- **Predicate should be DETAILED and COMPREHENSIVE**: Include specific biological effects, mechanisms, timeframes, severity indicators, and causal pathways when mentioned in the abstract (e.g., "faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when exposed to")
+- Subject/Object: Use exact names from provided lists only
+- Reason: Maximum 1 sentence explaining the relationship
+
+Output as a JSON array of objects. Do not include any explanatory text outside the JSON."""
         )
     user_prompt = f"""Abstract:
                     {abstract_text}
@@ -1049,23 +1039,33 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
     verification_schema = {
         "type": "object",
         "properties": {
-            "verification": {"type": "string", "enum": ["YES", "NO"]},
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+            "decision": {"type": "string", "enum": ["KEEP", "DROP"]},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "issues": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of issues found during review, empty if no issues"
+            }
         },
-        "required": ["verification", "confidence"]
+        "required": ["decision", "confidence", "issues"]
     }
     
     system_prompt = (
-        "You are a precise scientific fact checker specialized in ecological relationships. "
-        "Your task: Verify if the given triplet (Subject-Predicate-Object) relationship is accurately supported by the abstract. "
-        "\nVerification criteria:"
-        "\n1. The relationship must be explicitly stated or strongly implied in the abstract"
-        "\n2. The subject must be a bird species (Class Aves)"
-        "\n3. The threat/impact must be correctly described"
-        "\nCRITICAL: Be extremely concise. Return ONLY valid JSON with exactly these keys:"
-        '\n{"verification": "YES" or "NO", "confidence": 0.0-1.0}'
-        "\nUse YES only if the relationship is clearly supported by the abstract AND the subject is a bird."
-        "\nNo explanatory text outside the JSON."
+        "You are a meticulous scientific data reviewer. Your task is to perform a quality control check on a proposed species-threat relationship (triplet), comparing it against the provided abstract and a set of rules."
+        "\n\n### **Review Checklist**"
+        "\n\nEvaluate the triplet based on ALL of the following criteria:"
+        "\n\n1. **Evidentiary Support**: Is the relationship an observed result or conclusion explicitly stated in the abstract?"
+        "\n   * `FAIL` if it's only a hypothesis, a statement from the introduction, or not mentioned."
+        "\n\n2. **Subject Validity**: Is the `subject` a specific bird species (i.e., from Class Aves)?"
+        "\n   * `FAIL` if the subject is an aggregated group (e.g., \"shorebirds\") when specific species were named in the abstract."
+        "\n\n3. **Threat Validity**: Is the `object` (the threat) conceptually sound?"
+        "\n   * `FAIL` if it is a circular object (e.g., \"conservation status\"), an effect (e.g., \"mortality\"), or a simple ecological finding without measured harm (e.g., \"presence of parasites\")."
+        "\n\n4. **IUCN Category Consistency**: Does the assigned `IUCN label` correctly represent the threat's underlying driver according to standard classification rules? Pay special attention to whether the threat should be anthropogenic (IUCN 1-9) or natural (IUCN 10+)."
+        "\n\n### **Decision and Output**"
+        "\n\nBased on your review, provide a single, valid JSON object. Do not include any other text."
+        "\n\n* The `decision` should be `\"KEEP\"` only if the triplet passes ALL checks. Otherwise, it should be `\"DROP\"`."
+        "\n* The `issues` list must contain a brief explanation for each failed check."
+        "\n\nReturn ONLY valid JSON. No explanatory text outside the JSON."
     )
     abstract_hash_part = hashlib.md5(abstract.encode('utf-8', errors='replace')).hexdigest()[:16]
     cache_key_text = f"verify_json_confidence_batch_async:{abstract_hash_part}:{verification_cutoff}:{len(triplet_list)}" 
@@ -1089,12 +1089,13 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
         prompt = f"""Abstract:
                 {abstract}
 
-                Relationship to verify:
-                Subject: "{subject}"
-                Predicate: "{predicate}"
-                Object: "{obj}"
+                **TRIPLET TO REVIEW:**
+                Subject (Species): "{subject}"
+                Predicate (Impact): "{predicate}"
+                Object (Threat): "{obj}"
 
-                Is this relationship true based on the abstract (and is the subject a bird)? Provide your answer in the specified JSON format."""
+                **TASK:**
+                Perform a quality control check on this triplet using the review checklist. Evaluate evidentiary support, subject validity, threat validity, and provide your decision with any issues identified."""
                         
         response_str = None
         try:
@@ -1140,19 +1141,20 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                 clean_response = clean_response[3:-3].strip()
             
             result_json = json.loads(clean_response)
-            verification_decision = result_json.get("verification")
+            verification_decision = result_json.get("decision")
+            issues = result_json.get("issues", [])
             
-            # Try to extract log probabilities for YES/NO tokens
+            # Try to extract log probabilities for KEEP/DROP tokens
             log_prob_confidence = None
             if logprobs_info and logprobs_info.content:
                 logger.debug(f"Analyzing logprobs for {len(logprobs_info.content)} tokens")
-                yes_logprob = -float('inf')
-                no_logprob = -float('inf')
+                keep_logprob = -float('inf')
+                drop_logprob = -float('inf')
                 tokens_examined = 0
-                yes_tokens_found = []
-                no_tokens_found = []
+                keep_tokens_found = []
+                drop_tokens_found = []
                 
-                # Search through all tokens for YES/NO
+                # Search through all tokens for KEEP/DROP
                 for i, token_info in enumerate(logprobs_info.content):
                     # Handle both object and dict access patterns
                     top_logprobs = getattr(token_info, 'top_logprobs', None) or token_info.get('top_logprobs') if isinstance(token_info, dict) else None
@@ -1170,30 +1172,30 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                             token_lower = token_text.lower().strip()
                             logger.debug(f"   Token: '{token_text}' (normalized: '{token_lower}') -> logprob: {token_logprob:.4f}")
                             
-                            if token_lower in ['yes', '"yes"', 'true']:
-                                old_yes = yes_logprob
-                                yes_logprob = max(yes_logprob, token_logprob)
-                                yes_tokens_found.append((token_text, token_logprob))
-                                if token_logprob > old_yes:
-                                    logger.debug(f"Found YES token: '{token_text}' with logprob {token_logprob:.4f}")
-                            elif token_lower in ['no', '"no"', 'false']:
-                                old_no = no_logprob
-                                no_logprob = max(no_logprob, token_logprob)
-                                no_tokens_found.append((token_text, token_logprob))
-                                if token_logprob > old_no:
-                                    logger.debug(f"Found NO token: '{token_text}' with logprob {token_logprob:.4f}")
+                            if token_lower in ['keep', '"keep"']:
+                                old_keep = keep_logprob
+                                keep_logprob = max(keep_logprob, token_logprob)
+                                keep_tokens_found.append((token_text, token_logprob))
+                                if token_logprob > old_keep:
+                                    logger.debug(f"Found KEEP token: '{token_text}' with logprob {token_logprob:.4f}")
+                            elif token_lower in ['drop', '"drop"']:
+                                old_drop = drop_logprob
+                                drop_logprob = max(drop_logprob, token_logprob)
+                                drop_tokens_found.append((token_text, token_logprob))
+                                if token_logprob > old_drop:
+                                    logger.debug(f"Found DROP token: '{token_text}' with logprob {token_logprob:.4f}")
                 
                 logger.debug(f"Logprob analysis complete: examined {tokens_examined} tokens")
-                logger.info(f"YES tokens found: {len(yes_tokens_found)} (best: {yes_logprob:.4f})")
-                logger.info(f"NO tokens found: {len(no_tokens_found)} (best: {no_logprob:.4f})")
+                logger.info(f"KEEP tokens found: {len(keep_tokens_found)} (best: {keep_logprob:.4f})")
+                logger.info(f"DROP tokens found: {len(drop_tokens_found)} (best: {drop_logprob:.4f})")
                 
                 # Use log probability as confidence if found
-                if verification_decision.upper() == "YES" and yes_logprob > -float('inf'):
-                    log_prob_confidence = yes_logprob
-                    logger.debug(f"Using YES log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
-                elif verification_decision.upper() == "NO" and no_logprob > -float('inf'):
-                    log_prob_confidence = no_logprob
-                    logger.debug(f"Using NO log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
+                if verification_decision.upper() == "KEEP" and keep_logprob > -float('inf'):
+                    log_prob_confidence = keep_logprob
+                    logger.debug(f"Using KEEP log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
+                elif verification_decision.upper() == "DROP" and drop_logprob > -float('inf'):
+                    log_prob_confidence = drop_logprob
+                    logger.debug(f"Using DROP log probability: {log_prob_confidence:.4f} for decision '{verification_decision}'")
                 else:
                     logger.debug(f"Could not find matching log probability for decision '{verification_decision}'")
             else:
@@ -1213,10 +1215,11 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
 
             if isinstance(verification_decision, str):
                 decision = verification_decision.upper()
-                if decision == "YES":
-                    logger.info(f"ACCEPT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f})")
+                issues_str = "; ".join(issues) if issues else "No issues"
+                if decision == "KEEP":
+                    logger.info(f"ACCEPT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f}) | Issues: {issues_str}")
                 else:
-                    logger.info(f"REJECT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f})")
+                    logger.info(f"REJECT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f}) | Issues: {issues_str}")
                 return (subject, predicate, obj, doi_val), decision, log_prob_confidence
             else:
                 logger.error(f"Invalid verification decision type: {type(verification_decision)} for triplet: {subject}|{predicate}|{obj}")
@@ -1258,7 +1261,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
         if "ERROR" in decision:
             counts['errors'] += 1
             logger.warning(f"rejected: {subject} | {predicate} | {obj}")
-        elif decision == "YES":
+        elif decision == "KEEP":
             # Handle both log probability and regular confidence thresholds
             if confidence < 0:  # Log probability (negative values, closer to 0 = higher confidence)
                 # Logprob examples: -0.1 (very confident), -1.0 (medium), -3.0 (low confidence)
@@ -1271,7 +1274,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                 conf_type = "conf"
                 logger.info(f"Regular confidence threshold comparison: {confidence:.4f} >= {verification_cutoff} = {is_confident}")
             
-            logger.info(f"Processing YES decision for: {subject}|{predicate}|{obj}")
+            logger.info(f"Processing KEEP decision for: {subject}|{predicate}|{obj}")
             logger.info(f"Confidence type: {conf_type}, value: {confidence:.4f}, passes threshold: {is_confident}")
             
             if is_confident:

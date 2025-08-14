@@ -107,25 +107,34 @@ async def check_for_primary_evidence(abstract: str, llm_setup: dict) -> dict:
     gate_schema = {
         "type": "object",
         "properties": {
-            "primary_evidence_found": {
+            "is_primary_finding": {
                 "type": "boolean",
-                "description": "True only if the abstract contains at least one sentence presenting a specific finding or result from a direct study."
+                "description": "True only if ALL criteria are met: field study on wild populations, specific quantified result reported, biological subject focus"
             },
             "strongest_evidence_sentence": {
                 "type": "string",
-                "description": "The single best sentence from the abstract that represents a primary finding. If none, this must be an empty string."
+                "description": "The single sentence from the abstract that best supports a 'true' decision. Empty string if false."
             }
         },
-        "required": ["primary_evidence_found", "strongest_evidence_sentence"]
+        "required": ["is_primary_finding", "strongest_evidence_sentence"]
     }
 
-    system_prompt = f"""You are an efficient data screener. Your only job is to determine if an abstract contains primary research findings.
+    system_prompt = f"""You are a precision scientific screener. Your task is to determine if a provided abstract reports primary, field-based research findings on a biological population.
 
-Scan the text for sentences that state a specific, quantitative, or observational result from the authors' own study. Look for phrases like "we found that," "results indicate," or sentences that directly report a measured outcome.
+Carefully evaluate the abstract against the following criteria. To return `true`, **ALL** three conditions must be clearly met:
 
-Your entire decision is based on one question: Does this text contain a sentence that looks like a primary finding?
+1. **Study Type**: The findings are from a **field study** on **wild populations**.
+   * `FAIL` if the study is a review, meta-analysis, theoretical model, lab experiment, or on captive/domesticated populations.
 
-Return a JSON object conforming to this schema.
+2. **Result Presence**: The abstract reports a **specific, quantified result** from the authors' own work.
+   * Look for conclusions like "we found," "results showed," or statements with numbers, percentages, or clear comparative terms (e.g., "higher," "decreased," "significant").
+   * `FAIL` if the text only states aims, hypotheses, or methods without reporting an outcome.
+
+3. **Subject Focus**: The result is about a **biological species** or taxonomic group.
+   * `FAIL` if the findings are purely environmental (e.g., measuring water temperature with no mention of an organism).
+
+Based on this evaluation, return a single, valid JSON object only. If the abstract fails any check, `is_primary_finding` must be `false`.
+
 Schema:
 {json.dumps(gate_schema, indent=2)}"""
 
@@ -136,7 +145,7 @@ Schema:
             prompt=user_prompt,
             system=system_prompt,
             model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
-            temp=0.1,
+            temp=0.0,
             format=gate_schema,
             llm_setup=llm_setup
         )
@@ -147,45 +156,62 @@ Schema:
                 return evidence_data
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse evidence gate JSON response: {response[:100]}")
-                return {"primary_evidence_found": False, "strongest_evidence_sentence": ""}
+                return {"is_primary_finding": False, "strongest_evidence_sentence": ""}
         else:
-            return {"primary_evidence_found": False, "strongest_evidence_sentence": ""}
+            return {"is_primary_finding": False, "strongest_evidence_sentence": ""}
             
     except Exception as e:
         logger.error(f"Error in evidence gate: {e}")
-        return {"primary_evidence_found": False, "strongest_evidence_sentence": ""}
+        return {"is_primary_finding": False, "strongest_evidence_sentence": ""}
 
-async def check_for_impact_conservation_evidence(abstract: str, llm_setup: dict) -> bool:
+async def check_for_impact_conservation_evidence(abstract: str, llm_setup: dict) -> dict:
     import json
     
     gate_schema = {
         "type": "object",
         "properties": {
-            "impact_conservation_found": {
+            "impact_or_conservation_found": {
                 "type": "boolean",
-                "description": "True only if the abstract contains sentences describing measured impacts on species/ecosystems or conservation outcomes."
+                "description": "True only if ALL criteria are met: measured outcome, biological subject, negative impact OR conservation outcome, field context"
             },
             "strongest_impact_sentence": {
                 "type": "string", 
-                "description": "The single best sentence showing impact on species/ecosystems or conservation results. If none, this must be an empty string."
+                "description": "The single sentence from the abstract that best supports a 'true' decision. Leave as an empty string if false."
             }
         },
-        "required": ["impact_conservation_found", "strongest_impact_sentence"]
+        "required": ["impact_or_conservation_found", "strongest_impact_sentence"]
     }
 
-    system_prompt = f"""You are scanning for specific types of evidence about impacts on wildlife or conservation outcomes.
+    system_prompt = f"""You are a precision data screener for conservation science. Your task is to determine if an abstract reports a concrete, measured impact on a species or a measured conservation outcome from a field study.
 
-Look for sentences that describe:
-- Measured effects on species populations, behavior, or survival
-- Changes in habitat or ecosystem conditions  
-- Conservation intervention results or outcomes
-- Environmental stressor impacts on wildlife
+---
+### Decision Rule
 
-Find sentences that report specific impacts or conservation results, such as "population declined by X%," "habitat loss reduced nesting success," or "conservation efforts increased breeding pairs."
+To return `true`, **ALL** of the following four conditions must be clearly satisfied:
 
-Your task: Does this abstract contain a sentence describing a measured impact on species/ecosystems or a conservation outcome?
+1. **Measured Outcome**: The abstract reports a measured or observed outcome using numbers, percentages, or clear comparative terms (e.g., "significant," "increased," "decreased").
+2. **Biological Subject**: The outcome is directly tied to a species, a taxonomic group, or an ecosystem condition explicitly affecting a species.
+3. **Finding Type**: The outcome is either:
+   * A **negative impact** on the species (affecting survival, reproduction, abundance, etc.), OR
+   * A **positive/negative conservation outcome** (i.e., a human intervention produced a measured change).
+4. **Field Context**: The finding is from a **field study on wild populations**.
 
-Return a JSON object conforming to this schema.
+---
+### Strict Exclusions
+
+Return `false` if the abstract is primarily about:
+* Survey methods, sampling bias, or species detectability.
+* Correlations described without a clear cause-and-effect impact.
+* Simple exposure to a substance without a measured biological outcome.
+* General natural history or basic ecology with no measured effect.
+* Reviews, meta-analyses, theoretical models, or lab/captive-only studies.
+* Stating aims or hypotheses without reporting corresponding results.
+
+---
+### Output Format
+
+Based on this evaluation, return a single, valid JSON object only. If uncertain, default to `false`.
+
 Schema:
 {json.dumps(gate_schema, indent=2)}"""
 
@@ -196,7 +222,7 @@ Schema:
             prompt=user_prompt,
             system=system_prompt,
             model=llm_setup.get("model", "qwen/qwen3-30b-a3b"),
-            temp=0.1,
+            temp=0.0,
             format=gate_schema,
             llm_setup=llm_setup
         )
@@ -204,16 +230,16 @@ Schema:
         if response:
             try:
                 evidence_data = json.loads(response)
-                return evidence_data.get("impact_conservation_found", False)
+                return evidence_data
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse impact gate JSON response: {response[:100]}")
-                return False
+                return {"impact_or_conservation_found": False, "strongest_impact_sentence": ""}
         else:
-            return False
+            return {"impact_or_conservation_found": False, "strongest_impact_sentence": ""}
             
     except Exception as e:
         logger.error(f"Error in impact/conservation gate: {e}")
-        return False
+        return {"impact_or_conservation_found": False, "strongest_impact_sentence": ""}
 
 async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
     if not batch_items:
@@ -577,109 +603,90 @@ async def run_main_pipeline_logic(args):
                             
                             logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
                             
-                            backfill_attempts = 0
-                            max_backfill_attempts = 10
-                            
-                            while len(successful_abstracts) < target_successful_abstracts and backfill_attempts < max_backfill_attempts:
-                                remaining_relevant = []
+                            needed_replacements = target_successful_abstracts - len(successful_abstracts)
+                            if needed_replacements > 0:
+                                logger.info(f"Target not met. Need {needed_replacements} more successful abstracts. Starting a single large backfill run.")
+                                
+                                backfill_candidates = []
                                 processed_dois = {abs_data['doi'] for abs_data in chunk}
                                 
                                 for i, (is_relevant, relevance_score) in enumerate(results):
                                     if is_relevant and batch_items[i]['doi'] not in processed_dois:
-                                        remaining_relevant.append(batch_items[i])
+                                        backfill_candidates.append(batch_items[i])
                                 
-                                if not remaining_relevant:
-                                    logger.info(f"Current batch exhausted, scanning for more relevant abstracts (attempt {backfill_attempts + 1})")
+                                logger.info(f"Found {len(backfill_candidates)} candidates from the initial batch. Scanning for more.")
+                                
+                                target_relevant_to_find = batch_size
+                                backfill_batch_size = 2000
+                                
+                                while len(backfill_candidates) < target_relevant_to_find:
+                                    backfill_df = load_data_with_offset("shorebirds.parquet", skip_rows, backfill_batch_size)
+                                    if len(backfill_df) == 0:
+                                        logger.info("No more data available for backfill scanning.")
+                                        break
                                     
-                                    target_relevant_per_attempt = max_limit if max_limit != float('inf') else batch_size
-                                    found_relevant_count = 0
-                                    backfill_batch_size = 2000
+                                    logger.info(f"Backfill scanning batch of {len(backfill_df)} abstracts (found {len(backfill_candidates)}/{target_relevant_to_find} candidates so far)")
                                     
-                                    while found_relevant_count < target_relevant_per_attempt:
-                                        backfill_df = load_data_with_offset("shorebirds.parquet", skip_rows, backfill_batch_size)
-                                        if len(backfill_df) == 0:
-                                            logger.info("No more data available for backfill")
-                                            break
-                                        
-                                        logger.info(f"Backfill scanning batch of {len(backfill_df)} abstracts (found {found_relevant_count}/{target_relevant_per_attempt} relevant so far)")
-                                        
-                                        backfill_items = []
-                                        for i, row_data in enumerate(backfill_df.iter_rows(named=True)):
-                                            abstract_text = row_data["abstract"]
-                                            title_text = row_data["title"]
-                                            doi_text = row_data.get("doi")
-                                            if not doi_text: continue
-                                            if "captivity" in abstract_text.lower() or len(abstract_text) < 50:
-                                                continue
-                                            backfill_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
-                                        
-                                        if backfill_items:
-                                            backfill_tasks = []
-                                            for item in backfill_items:
-                                                backfill_tasks.append(
-                                                    check_relevance(item['title'], item['abstract'], llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
-                                                )
-                                            
-                                            backfill_results = await asyncio.gather(*backfill_tasks)
-                                            
-                                            for i, (is_relevant, relevance_score) in enumerate(backfill_results):
-                                                if is_relevant:
-                                                    remaining_relevant.append(backfill_items[i])
-                                                    found_relevant_count += 1
-                                                    logger.info(f"BACKFILL RELEVANT #{found_relevant_count}: '{backfill_items[i]['title'][:50]}...'")
-                                                    
-                                                    if found_relevant_count >= target_relevant_per_attempt:
-                                                        break
-                                        
-                                        skip_rows += len(backfill_df)
-                                        total_scanned += len(backfill_df)
-                                        
-                                        if found_relevant_count >= target_relevant_per_attempt:
-                                            break
+                                    backfill_scan_items = []
+                                    for i, row_data in enumerate(backfill_df.iter_rows(named=True)):
+                                        abstract_text = row_data["abstract"]
+                                        title_text = row_data["title"]
+                                        doi_text = row_data.get("doi")
+                                        if not doi_text: continue
+                                        if "captivity" in abstract_text.lower() or len(abstract_text) < 50:
+                                            continue
+                                        backfill_scan_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
                                     
-                                    logger.info(f"Backfill attempt complete: found {found_relevant_count} relevant abstracts")
-                                
-                                if not remaining_relevant:
-                                    logger.info(f"No more relevant abstracts available for replacement (attempt {backfill_attempts + 1})")
-                                    break
-                                
-                                needed_replacements = target_successful_abstracts - len(successful_abstracts)
-                                replacement_count = min(len(remaining_relevant), needed_replacements * 2)
-                                replacement_abstracts = remaining_relevant[:replacement_count]
-                                
-                                backfill_attempts += 1
-                                logger.info(f"Backfill attempt #{backfill_attempts}: Need {needed_replacements} successful abstracts, trying {len(replacement_abstracts)} replacements")
+                                    if backfill_scan_items:
+                                        backfill_results = await process_relevance_parallel_batches(
+                                            backfill_scan_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier
+                                        )
+                                        
+                                        for i, (is_relevant, relevance_score) in enumerate(backfill_results):
+                                            if is_relevant:
+                                                backfill_candidates.append(backfill_scan_items[i])
+                                                if len(backfill_candidates) >= target_relevant_to_find:
+                                                    break
+                                    
+                                    skip_rows += len(backfill_df)
+                                    total_scanned += len(backfill_df)
+                                    
+                                    if len(backfill_candidates) >= target_relevant_to_find:
+                                        break
 
-                                replacement_triplets, replacement_taxo = await process_abstract_chunk(
-                                    replacement_abstracts,
-                                    llm_setup,
-                                    refinement_cache
-                                )
+                                logger.info(f"Backfill scan complete: found a total of {len(backfill_candidates)} relevant candidates.")
                                 
-                                replacement_triplets_by_doi = {}
-                                for triplet in replacement_triplets:
-                                    doi = triplet[3]
-                                    if doi not in replacement_triplets_by_doi:
-                                        replacement_triplets_by_doi[doi] = []
-                                    replacement_triplets_by_doi[doi].append(triplet)
-                                
-                                new_successes = 0
-                                for abstract in replacement_abstracts:
-                                    doi = abstract['doi']
-                                    if doi in replacement_triplets_by_doi and len(replacement_triplets_by_doi[doi]) > 0:
-                                        successful_abstracts.append(abstract)
-                                        new_successes += 1
-                                        logger.info(f"REPLACEMENT SUCCESS: {doi} produced {len(replacement_triplets_by_doi[doi])} triplets")
-                                    else:
-                                        failed_abstracts.append(abstract)
-                                        logger.info(f"REPLACEMENT FAILED: {doi} produced 0 triplets")
-                                
-                                chunk_triplets.extend(replacement_triplets)
-                                chunk_taxo.update(replacement_taxo)
-                                chunk.extend(replacement_abstracts)
-                                
-                                logger.info(f"Backfill #{backfill_attempts}: Got {new_successes} new successful abstracts, total successful: {len(successful_abstracts)}")
-                            
+                                if backfill_candidates:
+                                    logger.info(f"Processing all {len(backfill_candidates)} backfill candidates.")
+                                    
+                                    replacement_triplets, replacement_taxo = await process_abstract_chunk(
+                                        backfill_candidates,
+                                        llm_setup,
+                                        refinement_cache
+                                    )
+                                    
+                                    replacement_triplets_by_doi = {}
+                                    for triplet in replacement_triplets:
+                                        doi = triplet[3]
+                                        if doi not in replacement_triplets_by_doi:
+                                            replacement_triplets_by_doi[doi] = []
+                                        replacement_triplets_by_doi[doi].append(triplet)
+                                    
+                                    new_successes = 0
+                                    for abstract in backfill_candidates:
+                                        doi = abstract['doi']
+                                        if doi in replacement_triplets_by_doi and len(replacement_triplets_by_doi[doi]) > 0:
+                                            successful_abstracts.append(abstract)
+                                            new_successes += 1
+                                        else:
+                                            failed_abstracts.append(abstract)
+                                    
+                                    chunk_triplets.extend(replacement_triplets)
+                                    chunk_taxo.update(replacement_taxo)
+                                    chunk.extend(backfill_candidates)
+                                    
+                                    logger.info(f"Single backfill run complete: Got {new_successes} new successful abstracts.")
+
                             final_successful = len(successful_abstracts)
                             final_failed = len(failed_abstracts)
                             final_triplets = len(chunk_triplets)
@@ -873,12 +880,13 @@ async def process_abstract_chunk(
         threat_filter_results = await asyncio.gather(*threat_filter_tasks)
         threat_containing_abstracts = []
         
-        for i, is_impact_relevant in enumerate(threat_filter_results):
-            if is_impact_relevant:
+        for i, impact_result in enumerate(threat_filter_results):
+            if impact_result.get("impact_or_conservation_found", False):
                 threat_containing_abstracts.append(chunk[i])
-                logger.info(f"IMPACT/CONSERVATION EVIDENCE DETECTED in abstract {chunk[i]['doi']}")
+                strongest_sentence = impact_result.get("strongest_impact_sentence", "")
+                logger.info(f"IMPACT/CONSERVATION EVIDENCE DETECTED in {chunk[i]['doi']}: '{strongest_sentence[:100]}...'")
             else:
-                logger.info(f"NO IMPACT/CONSERVATION EVIDENCE in abstract {chunk[i]['doi']} - FILTERED OUT")
+                logger.info(f"NO IMPACT/CONSERVATION EVIDENCE in {chunk[i]['doi']} - FILTERED OUT")
         
         logger.info(f"Impact filter: {len(threat_containing_abstracts)}/{len(chunk)} abstracts contain impact/conservation evidence")
         
@@ -904,7 +912,7 @@ async def process_abstract_chunk(
         primary_evidence_abstracts = []
         
         for i, evidence_result in enumerate(evidence_results):
-            if evidence_result.get("primary_evidence_found", False):
+            if evidence_result.get("is_primary_finding", False):
                 primary_evidence_abstracts.append(chunk[i])
                 strongest_sentence = evidence_result.get("strongest_evidence_sentence", "")
                 logger.info(f"PRIMARY EVIDENCE FOUND in {chunk[i]['doi']}: '{strongest_sentence[:100]}...'")

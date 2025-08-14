@@ -26,9 +26,10 @@ async def get_iucn_classification_json(subject: str, predicate: str, threat_desc
         "type": "object",
         "properties": {
             "iucn_code": {"type": "string", "description": "IUCN code like '5.3' or '11.1'"},
-            "iucn_name": {"type": "string", "description": "IUCN category name"}
+            "iucn_name": {"type": "string", "description": "IUCN category name"},
+            "justification": {"type": "string", "description": "1-2 sentences mapping the threat evidence to the classification rules"}
         },
-        "required": ["iucn_code", "iucn_name"]
+        "required": ["iucn_code", "iucn_name", "justification"]
     }
 
     abstract_section = ""
@@ -53,7 +54,8 @@ Classify this threat using the IUCN-CMP Direct Threats Classification v4.0. Iden
 **REQUIRED OUTPUT FORMAT:**
 {{
   "iucn_code": "<The most specific L2 code, e.g., '1.1'>",
-  "iucn_name": "<The corresponding name for the L2 code>"
+  "iucn_name": "<The corresponding name for the L2 code>",
+  "justification": "<1-2 sentences mapping the threat evidence to the classification rules>"
 }}
             """
                 
@@ -73,12 +75,16 @@ Classify this threat using the IUCN-CMP Direct Threats Classification v4.0. Iden
             result_json = json.loads(response_str) 
             code = result_json.get("iucn_code")
             name = result_json.get("iucn_name")
+            justification = result_json.get("justification", "")
             
             # basic validation
             if isinstance(code, str) and isinstance(name, str) and code.strip() and name.strip() and re.match(r"^\d+(\.\d+)?$", code.strip()):
                 code = code.strip()
                 name = name.strip()
-                logger.info(f"Classified as: {code} - {name}")
+                if justification:
+                    logger.info(f"Classified as: {code} - {name} | Justification: {justification}")
+                else:
+                    logger.info(f"Classified as: {code} - {name}")
                 result = (code, name)
                 cache.set(cache_key, result)
                 return result
@@ -183,9 +189,41 @@ Stressors in natural systems that have been altered by the effects of current or
             """
 
 IUCN_THREAT_PROMPT_SYSTEM = f"""
-You are an expert ecologist specializing in threat analysis. Your task is to classify a described threat to a species using the IUCN-CMP Direct Threats Classification v4.0.
+You are an expert ecologist specializing in threat classification. Your task is to classify a described threat using the IUCN-CMP Direct Threats Classification v4.0.
 
-Analyze the provided context and the specific extracted relationship. Your goal is to identify the single most appropriate threat category that represents the underlying driver of the threat, not just the immediate symptom. For example, if a species is declining due to a lack of food, and the lack of food is caused by logging, the underlying threat is 5.3 Logging, Harvesting & Controlling Trees, not simply "lack of food".
+Your goal is to identify the single most appropriate threat category representing the **underlying driver** of the threat, not the immediate symptom. For example, if a species has "low productivity" (the symptom) because of "mining pollution" (the driver), the correct classification is for pollution, not something generic.
+
+---
+
+### **Classification Rules & Instructions**
+
+1. **Find the Root Cause**: Always trace the impact back to the external human activity or environmental factor causing it.
+2. **Select the Most Specific Category**: Choose the most detailed sub-category (e.g., '1.1') that is directly supported by the evidence.
+3. **Provide Justification**: In your output, briefly explain *why* your chosen category is the correct one, referencing the evidence.
+
+### **Specific Disambiguation Rules**
+
+To ensure consistency, apply the following specific rules for commonly confused categories:
+
+* **Pollution (IUCN 9.x) Disambiguation**:
+    * **9.2 Garbage & Solid Waste**: Use for plastics, litter, derelict fishing gear, and other solid items causing harm (e.g., entanglement, ingestion).
+    * **9.1 Water-Borne & Other Effluent Pollution**: Use for industrial/military effluents (mining tailings, toxins), agricultural effluents (pesticides, herbicides, fertilizer runoff), and domestic/urban wastewater. This covers most liquid, chemical, or non-solid pollutants.
+
+* **Climate vs. Weather Disambiguation**:
+    * **10.2 Severe Weather Events**: Use for episodic events like storms, hurricanes, heatwaves, and named events (El Niño/La Niña).
+    * **11.2 Changes in Temperature Regimes / 11.3 Changes in Precipitation**: Use for long-term trends, regime shifts, and persistent pattern changes (e.g., long-term warming, multi-year droughts).
+
+* **Energy vs. Collisions Disambiguation**:
+    * **3.3 Renewable Energy**: Use when the threat is explicitly the development or presence of energy infrastructure (e.g., wind farms causing habitat loss).
+    * **4.2 Utility & Service Lines / 4.1 Roads, Trails & Railroads**: Use for direct collisions with infrastructure (e.g., power line electrocution, vehicle collisions) unless the infrastructure is explicitly part of an energy project.
+
+* **Unknown Threats (12.x)**: Use only when absolutely no other category applies and no root cause can be identified from the evidence provided.
+
+---
+
+{IUCN_CATEGORIES_TEXT}
+
+---
 
 **THREAT DEFINITION:** A threat is a direct, external factor that causes or contributes to the degradation, loss, or impairment of a species or ecosystem. Exclude:
 - Natural ecological processes (predator-prey dynamics, migration, food availability changes)
@@ -200,24 +238,6 @@ Analyze the provided context and the specific extracted relationship. Your goal 
 - Always trace back to the external human or environmental factor causing these effects
 
 Return your answer as a single, valid JSON object only. Do not include any explanatory text outside the JSON structure.
-
-{IUCN_CATEGORIES_TEXT}
-
-**Critical Instructions:**
-1. Analyze the threat description in the context of the Subject (Species) and Predicate (Impact Mechanism).
-2. Identify the *underlying cause* of the threat, not just the immediate symptom or effect.
-3. Select the single *most specific and relevant* L2 category code (e.g., '1.1', '8.2') that best represents the *underlying driver*.
-4. **Avoid Unknown Threats (12.x)** unless absolutely no other category is applicable. Think critically about the root cause.
-5. For ambiguous cases, consider: What human activity or natural process is ultimately driving this threat?
-6. Return ONLY a valid JSON object with the most specific L2 code and corresponding name.
-
-Examples of underlying cause thinking:
-- "Predation by invasive rats" → 8.1 Invasive Non-Native / Alien Species
-- "Habitat loss from urban expansion" → 1.1 Residential Areas or 1.2 Commercial & Industrial Areas
-- "Disease outbreak in captive-bred population" → 8.4 Pathogens
-- "Collision with wind turbines" → 3.3 Renewable Energy
-- "Low productivity due to mining pollution" → 9.1 Water-Borne & Other Effluent Pollution
-- "Declining due to low productivity" → If no underlying cause given, classify as 12 Unknown Threats
 """
 
 def parse_and_validate_object(object_str: str) -> tuple[str, Optional[str], Optional[str], bool]:
