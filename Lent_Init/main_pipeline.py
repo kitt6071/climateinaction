@@ -603,9 +603,13 @@ async def run_main_pipeline_logic(args):
                             
                             logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
                             
-                            needed_replacements = target_successful_abstracts - len(successful_abstracts)
-                            if needed_replacements > 0:
-                                logger.info(f"Target not met. Need {needed_replacements} more successful abstracts. Starting a single large backfill run.")
+                            max_backfill_attempts = 10
+                            backfill_attempt = 0
+                            
+                            while len(successful_abstracts) < target_successful_abstracts and backfill_attempt < max_backfill_attempts:
+                                backfill_attempt += 1
+                                needed_replacements = target_successful_abstracts - len(successful_abstracts)
+                                logger.info(f"Backfill attempt #{backfill_attempt}: Need {needed_replacements} successful abstracts, trying to find {batch_size} relevant abstracts")
                                 
                                 backfill_candidates = []
                                 processed_dois = {abs_data['doi'] for abs_data in chunk}
@@ -616,7 +620,7 @@ async def run_main_pipeline_logic(args):
                                 
                                 logger.info(f"Found {len(backfill_candidates)} candidates from the initial batch. Scanning for more.")
                                 
-                                target_relevant_to_find = batch_size
+                                target_relevant_to_find = max_limit
                                 backfill_batch_size = 2000
                                 
                                 while len(backfill_candidates) < target_relevant_to_find:
@@ -654,10 +658,10 @@ async def run_main_pipeline_logic(args):
                                     if len(backfill_candidates) >= target_relevant_to_find:
                                         break
 
-                                logger.info(f"Backfill scan complete: found a total of {len(backfill_candidates)} relevant candidates.")
+                                logger.info(f"Backfill attempt #{backfill_attempt}: Found {len(backfill_candidates)} relevant abstracts to process")
                                 
                                 if backfill_candidates:
-                                    logger.info(f"Processing all {len(backfill_candidates)} backfill candidates.")
+                                    logger.info(f"Processing {len(backfill_candidates)} backfill candidates through full pipeline.")
                                     
                                     replacement_triplets, replacement_taxo = await process_abstract_chunk(
                                         backfill_candidates,
@@ -685,7 +689,10 @@ async def run_main_pipeline_logic(args):
                                     chunk_taxo.update(replacement_taxo)
                                     chunk.extend(backfill_candidates)
                                     
-                                    logger.info(f"Single backfill run complete: Got {new_successes} new successful abstracts.")
+                                    logger.info(f"Backfill #{backfill_attempt}: Got {new_successes} new successful abstracts, total successful: {len(successful_abstracts)}")
+                                else:
+                                    logger.warning(f"Backfill attempt #{backfill_attempt}: No relevant abstracts found, stopping backfill")
+                                    break
 
                             final_successful = len(successful_abstracts)
                             final_failed = len(failed_abstracts)
