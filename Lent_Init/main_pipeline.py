@@ -518,10 +518,21 @@ async def run_main_pipeline_logic(args):
             break
 
         logger.info(f"Loading batch: skip={skip_rows}, max={batch_size} (shorebird papers found so far: {processed_count})")
-        df_batch = load_data_with_offset("shorebirds.parquet", skip_rows, batch_size)
+        df_batch = load_data_with_offset("new_iucn_test_subset.parquet", skip_rows, batch_size)
         
         if len(df_batch) == 0:
             logger.info("No more data")
+            if chunk:
+                logger.info(f"Processing final chunk of {len(chunk)} abstracts before exit")
+                chunk_triplets, chunk_taxo = await process_abstract_chunk(
+                    chunk, llm_setup, refinement_cache
+                )
+                logger.info(f"Final chunk: {len(chunk_triplets)} triplets, {len(chunk_taxo)} taxonomy")
+                norm_triplets.extend(chunk_triplets)
+                taxo_map.update(chunk_taxo)
+                all_data.extend(chunk)
+                logger.info(f"Final total: {len(norm_triplets)} triplets, {len(taxo_map)} taxonomy")
+                chunk = []
             break
         
         actual_rows = len(df_batch)
@@ -624,7 +635,7 @@ async def run_main_pipeline_logic(args):
                                 backfill_batch_size = 2000
                                 
                                 while len(backfill_candidates) < target_relevant_to_find:
-                                    backfill_df = load_data_with_offset("shorebirds.parquet", skip_rows, backfill_batch_size)
+                                    backfill_df = load_data_with_offset("new_iucn_test_subset.parquet", skip_rows, backfill_batch_size)
                                     if len(backfill_df) == 0:
                                         logger.info("No more data available for backfill scanning.")
                                         break
@@ -1006,9 +1017,9 @@ async def process_abstract_chunk(
     triplets_by_doi = defaultdict(list)
     doi_to_abstract = {data['doi']: data['abstract'] for data in chunk if 'doi' in data and 'abstract' in data}
 
-    for s, p, o, d in enriched_triplets:
+    for s, p, o, d, evidence in enriched_triplets:
         if d in doi_to_abstract: 
-            triplets_by_doi[d].append((s, p, o, d)) 
+            triplets_by_doi[d].append((s, p, o, d, evidence)) 
         else:
             logger.warning(f"DOI {d} not in current chunk, skipping verification")
 
@@ -1058,7 +1069,7 @@ async def process_abstract_chunk(
 
     logger.info(f"Classifying threat sentiment for {len(verified_triplets)} triplets.")
     threat_classification_tasks = []
-    for s, p, o, d in verified_triplets:
+    for s, p, o, d, evidence in verified_triplets:
         threat_desc, _, _, _ = parse_and_validate_object(o)
         threat_classification_tasks.append(
             classify_threat_for_subject(s, p, threat_desc, llm_setup, refinement_cache)
@@ -1093,7 +1104,7 @@ async def process_abstract_chunk(
     post_pre_enriched = {}
     doi_to_abstract_post = {data['doi']: data['abstract'] for data in chunk if 'doi' in data and 'abstract' in data}
 
-    for idx, (s, p, o, d) in enumerate(normalized_triplets):
+    for idx, (s, p, o, d, evidence) in enumerate(normalized_triplets):
         desc, code, name, is_valid = parse_and_validate_object(o)
         final_desc = desc if desc else o
         needs_iucn = not is_valid or not (code and name) or code == "12.1"
@@ -1105,15 +1116,18 @@ async def process_abstract_chunk(
             if cached:
                 cached_code, cached_name = cached
                 refined_o = f"{final_desc} [IUCN: {cached_code} {cached_name}]"
-                post_pre_enriched[idx] = (s, p, refined_o, d)
+                post_pre_enriched[idx] = (s, p, refined_o, d, evidence)
             else:
                 post_iucn_items.append((s, p, final_desc, o, idx, abstract_text))
         else:
             refined_o = f"{final_desc} [IUCN: {code} {name}]"
-            post_pre_enriched[idx] = (s, p, refined_o, d)
+            post_pre_enriched[idx] = (s, p, refined_o, d, evidence)
 
+    use_hierarchical = os.getenv('USE_HIERARCHICAL_IUCN', 'false').lower() == 'true'
+    logger.info(f"IUCN classification mode: {'Hierarchical' if use_hierarchical else 'Original'}")
+    
     post_iucn_tasks = [
-        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5])
+        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5], use_hierarchical=use_hierarchical)
         for item in post_iucn_items
     ]
 
@@ -1126,7 +1140,7 @@ async def process_abstract_chunk(
         for i, (code, name) in enumerate(post_iucn_results):
             s_iucn, p_iucn, desc_iucn, _orig_o, orig_idx, _abstract = post_iucn_items[i]
             refined_o = f"{desc_iucn} [IUCN: {code} {name}]"
-            final_triplets[orig_idx] = (s_iucn, p_iucn, refined_o, normalized_triplets[orig_idx][3])
+            final_triplets[orig_idx] = (s_iucn, p_iucn, refined_o, normalized_triplets[orig_idx][3], normalized_triplets[orig_idx][4])
 
     for idx, triplet in post_pre_enriched.items():
         final_triplets[idx] = triplet
@@ -1134,8 +1148,8 @@ async def process_abstract_chunk(
     # fill any gaps (keep original object if IUCN missing)
     for idx in range(len(normalized_triplets)):
         if final_triplets[idx] is None:  # type: ignore
-            s, p, o, d = normalized_triplets[idx]
-            final_triplets[idx] = (s, p, o, d)
+            s, p, o, d, evidence = normalized_triplets[idx]
+            final_triplets[idx] = (s, p, o, d, evidence)
 
     # compact None
     final_triplets = [t for t in final_triplets if t is not None]

@@ -35,7 +35,7 @@ def build_global_graph(all_triplets):
     #directed graph construction
     global_graph = nx.DiGraph()
     for triplet in all_triplets:
-        subject, predicate, obj, _doi = triplet
+        subject, predicate, obj, _doi, _evidence = triplet
         global_graph.add_node(subject)
         global_graph.add_node(obj)
         # merge multiple relationships between same nodes

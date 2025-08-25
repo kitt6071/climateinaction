@@ -8,7 +8,7 @@ from pathlib import Path
 from thefuzz import fuzz
 import sys
 import os
-from .llm_api_utility import llm_generate, llm_generate_with_retry, extract_content_from_result
+from .llm_api_utility import llm_generate, llm_generate_with_retry, extract_content_from_result, strip_markdown_json
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -110,8 +110,13 @@ Follow these steps precisely:
 **STEP 1: Assess Abstract Relevance**
 First, determine if the abstract contains documented negative impacts on a species (e.g., reduced survival, reproduction, population size, or habitat quality from field observations).
 
-* **If NO,** do not proceed. Return an empty JSON object: {{"species": [], "threats": [], "evidence_sentences": [], "reasoning": "Abstract does not contain documented findings of negative impact."}}
-* **If YES,** proceed to Step 2.
+**CRITICAL: ONLY EXTRACT CONFIRMED FINDINGS, NOT HYPOTHESES**
+- Extract if the study **CONCLUDED** or **FOUND** negative impacts
+- Do NOT extract if the study **HYPOTHESIZED**, **TESTED**, or **EXPLORED** potential impacts
+- Do NOT extract if the study **CONCLUDED NO IMPACT** or **UNLIKELY TO BE AFFECTED**
+
+* **If NO confirmed negative findings,** do not proceed. Return an empty JSON object: {{"species": [], "threats": [], "evidence_sentences": [], "reasoning": "Abstract does not contain documented findings of negative impact."}}
+* **If YES confirmed negative findings,** proceed to Step 2.
 
 **Do NOT extract from abstracts that are primarily about:**
 - Survey methodology, detectability, or observer bias
@@ -119,6 +124,11 @@ First, determine if the abstract contains documented negative impacts on a speci
 - Basic ecology or natural history without measured negative impact
 - Hypotheses, models, or theoretical risks NOT supported by study results
 - Laboratory studies or captive breeding studies
+
+**EXAMPLE OF WHAT NOT TO EXTRACT:**
+- Study abstract: "We tested whether 1080 baits pose a risk to Bush Stone-curlews... Our results indicate that reintroduction programs are **unlikely to be affected** by concurrent 1080-baiting."
+-  **DO NOT EXTRACT**: The study concluded NO negative impact
+-  **CORRECT ACTION**: Return empty JSON - no confirmed negative findings
 
 ---
 
@@ -218,7 +228,7 @@ Do not add any text or markdown before or after the JSON object.
         return None
 
 #Impact relationship extraction
-async def generate_relationships_concurrently(abstract_text: str, species_list: List[str], threats_list: List[str], llm_setup, doi: str) -> List[Tuple[str, str, str, str]]:
+async def generate_relationships_concurrently(abstract_text: str, species_list: List[str], threats_list: List[str], llm_setup, doi: str) -> List[Tuple[str, str, str, str, str]]:
     model_name = llm_setup.get("model", "unknown")
     logger.info(f"P2.2: Generating relationships using model {model_name} for DOI: {doi}, {len(species_list)} species, {len(threats_list)} threats")
     
@@ -232,11 +242,12 @@ async def generate_relationships_concurrently(abstract_text: str, species_list: 
             "type": "object",
             "properties": {
                 "subject": {"type": "string", "description": "Species name from provided list"},
-                "predicate": {"type": "string", "description": "Relationship/impact mechanism linking subject and object"},
+                "predicate_summary": {"type": "string", "description": "Summary of the impact (e.g., 'experienced population decline', 'showed reduced breeding success')"},
+                "predicate_evidence": {"type": "string", "description": "Direct quote or paraphrase from the abstract that provides evidence for this relationship"},
                 "object": {"type": "string", "description": "Threat description from provided list"},
                 "reason": {"type": "string", "description": "Brief explanation of why this relationship exists based on the abstract"}
             },
-            "required": ["subject", "predicate", "object", "reason"]
+            "required": ["subject", "predicate_summary", "predicate_evidence", "object", "reason"]
         }
     }
     system_prompt = (
@@ -250,6 +261,10 @@ First, analyze the abstract to determine if it is suitable for extraction. You w
 - The abstract reports **observed or quantified negative effects** on a species (e.g., mortality, reduced reproduction, population decline, habitat degradation).
 - The causal link is clear: a specific **threat causes an impact** on a species.
 - The work is based on **field observations** or documented real-world cases, not lab experiments or theoretical models.
+
+**CRITICAL: ONLY EXTRACT CONFIRMED FINDINGS, NOT HYPOTHESES**
+- Extract if the study **CONCLUDED** or **FOUND** negative impacts
+- Do NOT extract if the study **CONCLUDED NO IMPACT** or **UNLIKELY TO BE AFFECTED**
 
 **Do NOT extract triplets from abstracts that are primarily about:**
 - Survey methods, species detectability, or sampling design.
@@ -268,33 +283,39 @@ For each distinct negative relationship you identify, construct a triplet with a
 
 1. **Subject**: The specific species or taxonomic group being harmed (must be from provided species list).
 2. **Object**: The *cause* of the harm - the threat/external driver (must be from provided threats list).
-3. **Predicate**: The *effect* of the harm - detailed phrase describing what happens to the species *as a result of* the threat.
+3. **Predicate Structure**: Split the impact into two components:
+   - **predicate_summary**: Summary of what happened (e.g., "experienced population decline", "showed reduced breeding success")
+   - **predicate_evidence**: Direct quote or paraphrase from the abstract that supports this relationship
 
 **CRITICAL PREDICATE RULES:**
-* **The Predicate (effect) MUST NOT restate the Object (cause).** They must be distinct concepts.
-    * **INCORRECT**: `{"subject": "BirdA", "predicate": "experiences population decline", "object": "population decline"}`
-    * **CORRECT**: `{"subject": "BirdA", "predicate": "experiences population decline due to", "object": "widespread habitat loss"}`
-* **BE SPECIFIC AND DETAILED:** The predicate should capture the full mechanism of impact described in the abstract. Avoid vague terms like "is affected by." Instead, describe *how* it is affected.
+* **The predicate_summary MUST NOT restate the Object (cause).** They must be distinct concepts.
+    * **INCORRECT**: `{"subject": "BirdA", "predicate_summary": "experiences habitat loss", "object": "habitat loss"}`
+    * **CORRECT**: `{"subject": "BirdA", "predicate_summary": "experiences population decline", "object": "widespread habitat loss"}`
+* **predicate_summary**: Keep this concise and focused on the biological effect (e.g., "reduced nesting success", "increased mortality", "impaired health")
+* **predicate_evidence**: Must be actual text from the abstract that demonstrates the relationship, not your interpretation
 * **Deduplication Rules:** 
     - If multiple similar impacts are mentioned for the same species-threat pair, create ONE comprehensive triplet that captures the primary effect.
     - If distinctly different biological processes are affected (e.g., both survival AND reproduction), create separate triplets.
     - Avoid near-identical triplets that essentially describe the same relationship.
 
-### Examples of High-Quality Predicates:
+### Examples of Structured Predicates:
 
 * **Abstract Snippet**: "Little Tern faces increased risk of overheating of eggs, resulting from breeding later in the season when temperatures are higher."
     * **Subject**: `Little Tern`
     * **Object**: `higher temperatures`
-    * **Detailed Predicate**: `faces increased risk of overheating of eggs from breeding later in the season due to`
+    * **predicate_summary**: `faces increased risk of overheating of eggs`
+    * **predicate_evidence**: `faces increased risk of overheating of eggs, resulting from breeding later in the season when temperatures are higher`
 
 * **Abstract Snippet**: "Songbird populations experience impaired avian health due to mercury (Hg) exposure from industrial runoff."
     * **Subject**: `Songbird`
     * **Object**: `mercury (Hg) exposure from industrial runoff`
-    * **Detailed Predicate**: `experience impaired avian health due to`
+    * **predicate_summary**: `experience impaired avian health`
+    * **predicate_evidence**: `Songbird populations experience impaired avian health due to mercury (Hg) exposure from industrial runoff`
 
 For each relationship triplet, provide:
 - subject: Species name from provided list (use exact names from provided lists only)
-- predicate: Detailed relationship/impact mechanism capturing the full biological process, timing, severity, and causal pathway described in the abstract
+- predicate_summary: Impact summary focusing on the biological effect
+- predicate_evidence: Direct quote or paraphrase from abstract that supports the relationship
 - object: Threat description from provided list (use exact names from provided lists only)
 - reason: Brief explanation of why this relationship exists based on the abstract text (maximum 1 sentence)
 
@@ -335,21 +356,34 @@ Output as a JSON array of objects. Do not include any explanatory text outside t
             logger.error(f"P2.2: Species: {species_list}, Threats: {threats_list}")
             logger.error(f"P2.2: Abstract length: {len(abstract_text)} chars")
             return []
-            
-        relationships_data = json.loads(response_str)
+        
+        clean_json = strip_markdown_json(response_str)
+        try:
+            relationships_data = json.loads(clean_json)
+        except json.JSONDecodeError as e_json:
+            logger.error(f"P2.2: JSONDecodeError in relationship generation: {e_json}. DOI: {doi}")
+            logger.error(f"P2.2: Raw response: '{response_str[:500]}...'")
+            logger.error(f"P2.2: Cleaned JSON: '{clean_json[:500]}...'")
+            return []
         
         if isinstance(relationships_data, list):
             for rel in relationships_data:
                 if isinstance(rel, dict):
                     subject = rel.get("subject")
-                    predicate = rel.get("predicate")
+                    predicate_summary = rel.get("predicate_summary")
+                    predicate_evidence = rel.get("predicate_evidence")
                     obj_threat = rel.get("object")
                     reason = rel.get("reason")
+                    
+                    predicate = predicate_summary
+                    
                     if subject and predicate and obj_threat and subject in species_list and obj_threat in threats_list:
                         if len(predicate.split()) > 1:
-                            raw_triplets.append((subject, predicate, obj_threat, doi))
+                            raw_triplets.append((subject, predicate, obj_threat, doi, predicate_evidence))
                             if reason:
                                 logger.info(f"P2.2: Triplet reasoning - {subject} | {predicate} | {obj_threat}: REASONING: {reason}")
+                            if predicate_evidence:
+                                logger.info(f"P2.2: Evidence - {subject} | {predicate} | {obj_threat}: EVIDENCE: {predicate_evidence[:100]}...")
                         else:
                             logger.warning(f"P2.2: Dropping invalid triplet (short predicate): {rel}. DOI: {doi}")
                     else:
@@ -364,14 +398,19 @@ Output as a JSON array of objects. Do not include any explanatory text outside t
             for rel in actual_data_list:
                 if isinstance(rel, dict):
                     subject = rel.get("subject")
-                    predicate = rel.get("predicate")
+                    predicate_summary = rel.get("predicate_summary")
+                    predicate_evidence = rel.get("predicate_evidence")
                     obj_threat = rel.get("object")
-                    reason = rel.get("reason")
+                    reason = rel.get("reason")                    
+                    predicate = predicate_summary
+                    
                     if subject and predicate and obj_threat and subject in species_list and obj_threat in threats_list:
                         if len(predicate.split()) > 1:
-                            raw_triplets.append((subject, predicate, obj_threat, doi))
+                            raw_triplets.append((subject, predicate, obj_threat, doi, predicate_evidence))
                             if reason:
                                 logger.info(f"P2.2: Triplet reasoning - {subject} | {predicate} | {obj_threat}: REASONING: {reason}")
+                            if predicate_evidence:
+                                logger.info(f"P2.2: Evidence - {subject} | {predicate} | {obj_threat}: EVIDENCE: {predicate_evidence[:100]}...")
                         else:
                             logger.warning(f"P2.2: Dropping invalid triplet from 'value' list (short predicate): {rel}. DOI: {doi}")
                     else:
@@ -381,8 +420,6 @@ Output as a JSON array of objects. Do not include any explanatory text outside t
             logger.info(f"P2.2: Successfully parsed {len(raw_triplets)} relationships from 'value' key for DOI: {doi}.")
         else:
             logger.error(f"P2.2: Unexpected JSON structure for relationships. Expected list or dict with 'value'. Got {type(relationships_data)}. Raw: '{response_str}'. DOI: {doi}")
-    except json.JSONDecodeError as e_json:
-        logger.error(f"P2.2: JSONDecodeError in relationship generation: {e_json}. Raw: '{response_str}'. DOI: {doi}")
     except Exception as e:
         logger.error(f"P2.2: Error in generate_relationships_concurrently for DOI {doi}: {e}", exc_info=True)
     return raw_triplets
@@ -824,22 +861,22 @@ def are_threats_semantically_similar(threat1: str, threat2: str) -> bool:
     return score >= base_thresh
 
 # merge similar triplets
-def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[Tuple[str, str, str, str]]:
+def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str, str]]) -> List[Tuple[str, str, str, str, str]]:
     if not triplet_list:
         return []
     
     consolidated = []
     processed_indices = set()
     
-    for i, (subj1, pred1, obj1, doi1) in enumerate(triplet_list):
+    for i, (subj1, pred1, obj1, doi1, evidence1) in enumerate(triplet_list):
         if i in processed_indices:
             continue
             
-        similar_group = [(subj1, pred1, obj1, doi1)]
+        similar_group = [(subj1, pred1, obj1, doi1, evidence1)]
         processed_indices.add(i)
         
         # find similar ones
-        for j, (subj2, pred2, obj2, doi2) in enumerate(triplet_list[i+1:], i+1):
+        for j, (subj2, pred2, obj2, doi2, evidence2) in enumerate(triplet_list[i+1:], i+1):
             if j in processed_indices:
                 continue
                 
@@ -847,7 +884,7 @@ def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[
             if (are_terms_similar(subj1, subj2) and 
                 are_threats_semantically_similar(obj1, obj2) and
                 (doi1 == doi2)):
-                similar_group.append((subj2, pred2, obj2, doi2))
+                similar_group.append((subj2, pred2, obj2, doi2, evidence2))
                 processed_indices.add(j)
         
         # If we found similar triplets, combine them
@@ -861,6 +898,8 @@ def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[
             combined_doi = doi1 if len(doi_set) == 1 else similar_group[0][3]
             
             predicates = list(set(t[1] for t in similar_group))
+            evidence_list = [t[4] for t in similar_group if t[4]]  # Collect all evidence
+            
             if len(predicates) > 1:
                 def predicate_score(p: str) -> int:
                     p_low = p.lower()
@@ -881,18 +920,21 @@ def consolidate_triplets(triplet_list: List[Tuple[str, str, str, str]]) -> List[
             else:
                 combined_pred = predicates[0]
             
-            consolidated.append((combined_subj, combined_pred, combined_obj, combined_doi))
+            # Combine evidence - use the longest/most detailed one
+            combined_evidence = max(evidence_list, key=len) if evidence_list else evidence1
+            
+            consolidated.append((combined_subj, combined_pred, combined_obj, combined_doi, combined_evidence))
             print(f"\nMerged triplets:")
             for t in similar_group:
-                print(f"  {t[0]} | {t[1]} | {t[2]}")
-            print(f"Into: {combined_subj} | {combined_pred} | {combined_obj}\n")
+                print(f"  {t[0]} | {t[1]} | {t[2]} | Evidence: {(t[4] or '')[:50]}...")
+            print(f"Into: {combined_subj} | {combined_pred} | {combined_obj} | Evidence: {(combined_evidence or '')[:50]}...\n")
         else:
-            consolidated.append((subj1, pred1, obj1, doi1))
+            consolidated.append((subj1, pred1, obj1, doi1, evidence1))
     
     return consolidated
 
 # normalize species names
-async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str]], llm_setup) -> Tuple[List[Tuple[str, str, str, str]], Dict[str, Dict]]:
+async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str, str]], llm_setup) -> Tuple[List[Tuple[str, str, str, str, str]], Dict[str, Dict]]:
     logger.info(f"normalizing {len(triplet_list)} triplets")
     
     unique_subjects = sorted(list(set(t[0] for t in triplet_list)))
@@ -1007,11 +1049,11 @@ async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str]],
     normalized_triplets = []
     llm_taxonomy_map = {}
     
-    for subject, predicate, obj, doi in triplet_list:
+    for subject, predicate, obj, doi, evidence in triplet_list:
         tax_data = species_taxonomy_cache.get(subject)
         
         if tax_data:
-            normalized_triplets.append((tax_data['canonical_form'], predicate, obj, doi))
+            normalized_triplets.append((tax_data['canonical_form'], predicate, obj, doi, evidence))
             llm_taxonomy_map[subject] = tax_data
 
     logger.info(f"normalization complete:")
@@ -1022,7 +1064,7 @@ async def normalize_species_names(triplet_list: List[Tuple[str, str, str, str]],
     return normalized_triplets, llm_taxonomy_map
 
 # verify triplets
-async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstract: str, llm_setup, verification_cutoff: float = 0.75) -> Tuple[List[Tuple[str, str, str, str]], Dict[str, int]]:
+async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], abstract: str, llm_setup, verification_cutoff: float = 0.75) -> Tuple[List[Tuple[str, str, str, str, str]], Dict[str, int]]:
     #check triplets against original text
     verified_triplets_for_abstract = []
     counts = {
@@ -1085,7 +1127,14 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
             logger.warning(f"cache read failed: {e}")
             if cache_file_path.exists(): cache_file_path.unlink(missing_ok=True)
 
-    async def verify_single_triplet_task(subject, predicate, obj, doi_val, p_llm_setup, p_system_prompt, p_verification_schema):
+    async def verify_single_triplet_task(subject, predicate, obj, doi_val, evidence, p_llm_setup, p_system_prompt, p_verification_schema):
+        evidence_section = ""
+        if evidence:
+            evidence_section = f"""
+                **SUPPORTING EVIDENCE:**
+                "{evidence}"
+                """
+        
         prompt = f"""Abstract:
                 {abstract}
 
@@ -1093,6 +1142,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                 Subject (Species): "{subject}"
                 Predicate (Impact): "{predicate}"
                 Object (Threat): "{obj}"
+                {evidence_section}
 
                 **TASK:**
                 Perform a quality control check on this triplet using the review checklist. Evaluate evidentiary support, subject validity, threat validity, and provide your decision with any issues identified."""
@@ -1132,7 +1182,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                 logger.debug(f"Received response without logprobs for triplet: {subject}|{predicate}|{obj}")
             
             if not response_str:
-                return (subject, predicate, obj, doi_val), "ERROR_EMPTY_RESPONSE", 0.0
+                return (subject, predicate, obj, doi_val, evidence), "ERROR_EMPTY_RESPONSE", 0.0
 
             clean_response = response_str.strip()
             if clean_response.startswith("```json") and clean_response.endswith("```"):
@@ -1220,21 +1270,21 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
                     logger.info(f"ACCEPT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f}) | Issues: {issues_str}")
                 else:
                     logger.info(f"REJECT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f}) | Issues: {issues_str}")
-                return (subject, predicate, obj, doi_val), decision, log_prob_confidence
+                return (subject, predicate, obj, doi_val, evidence), decision, log_prob_confidence
             else:
                 logger.error(f"Invalid verification decision type: {type(verification_decision)} for triplet: {subject}|{predicate}|{obj}")
-                return (subject, predicate, obj, doi_val), "ERROR_INVALID_JSON_CONTENT", 0.0
+                return (subject, predicate, obj, doi_val, evidence), "ERROR_INVALID_JSON_CONTENT", 0.0
         
         except json.JSONDecodeError:
             logger.error(f"JSONDecodeError for triplet: {subject}|{predicate}|{obj}. Response: {response_str}")
-            return (subject, predicate, obj, doi_val), "ERROR_JSON_DECODE", 0.0
+            return (subject, predicate, obj, doi_val, evidence), "ERROR_JSON_DECODE", 0.0
         except Exception as e:
             logger.error(f"Exception in verify_single_triplet_task for {subject}|{predicate}|{obj}: {e}")
-            return (subject, predicate, obj, doi_val), f"ERROR_LLM_CALL: {str(e)[:50]}", 0.0
+            return (subject, predicate, obj, doi_val, evidence), f"ERROR_LLM_CALL: {str(e)[:50]}", 0.0
 
     tasks = []
-    for subject, predicate, obj, doi_val in triplet_list:
-        tasks.append(verify_single_triplet_task(subject, predicate, obj, doi_val, llm_setup, system_prompt, verification_schema))
+    for subject, predicate, obj, doi_val, evidence in triplet_list:
+        tasks.append(verify_single_triplet_task(subject, predicate, obj, doi_val, evidence, llm_setup, system_prompt, verification_schema))
     
     if not tasks: return [], counts
 
@@ -1244,7 +1294,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str]], abstrac
 
     for i, res_tuple_or_exc in enumerate(verification_results):
         original_triplet = triplet_list[i]
-        subject, predicate, obj, doi_val = original_triplet
+        subject, predicate, obj, doi_val, evidence = original_triplet
 
         if isinstance(res_tuple_or_exc, Exception):
             counts['errors'] += 1
