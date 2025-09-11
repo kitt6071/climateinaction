@@ -307,13 +307,12 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
     output_path = output_dir
     output_path.mkdir(exist_ok=True)
     
-    # build lookup for bird taxonomy data
+    # build lookup for all wildlife taxonomy data
     canon_llm_taxo = {}
     for _original_name, tax_data in llm_taxonomy_map_by_original_name.items():
-        if tax_data.get('is_bird', False):
-            canonical_form = tax_data.get('canonical_form')
-            if canonical_form: 
-                canon_llm_taxo[canonical_form] = tax_data
+        canonical_form = tax_data.get('canonical_form')
+        if canonical_form: 
+            canon_llm_taxo[canonical_form] = tax_data
 
     triplets_to_json = []
     for canonical_subject, predicate, obj, doi_val, evidence in triplets:
@@ -322,22 +321,16 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
             'is_bird': False
         })
         
-        if subject_taxo.get('is_bird', False):
-            triplets_to_json.append({
-                'subject': canonical_subject,
-                'predicate': predicate,
-                'object': obj,
-                'doi': doi_val,
-                'evidence': evidence,
-                'taxonomy': subject_taxo
-            })
+        triplets_to_json.append({
+            'subject': canonical_subject,
+            'predicate': predicate,
+            'object': obj,
+            'doi': doi_val,
+            'evidence': evidence,
+            'taxonomy': subject_taxo
+        })
     
-    # filter for birds only
-    filtered_taxo_info = {
-        original_name: tax_data
-        for original_name, tax_data in llm_taxonomy_map_by_original_name.items()
-        if tax_data.get('is_bird', False)
-    }
+    filtered_taxo_info = llm_taxonomy_map_by_original_name
 
     enriched_data = {
         'triplets': triplets_to_json,
@@ -351,11 +344,11 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
 
     # separate file for taxonomies to inspect
     if filtered_taxo_info:
-        with open(output_path / "llm_bird_taxonomies.json", "w", encoding='utf-8') as f:
+        with open(output_path / "llm_wildlife_taxonomies.json", "w", encoding='utf-8') as f:
             json.dump(filtered_taxo_info, f, indent=2)
-        print("Bird taxonomies saved to llm_bird_taxonomies.json")
+        print("Wildlife taxonomies saved to llm_wildlife_taxonomies.json")
     else:
-        print("No bird taxonomies to save")
+        print("No wildlife taxonomies to save")
 
 async def classify_threat_for_subject(subject: str, predicate: str, obj: str, llm_setup, cache: SimpleCache) -> Optional[dict]:
     cache_key = f"threat_sentiment_for_subject:{subject}|{predicate}|{obj}"
@@ -669,8 +662,6 @@ async def get_coarse_iucn_classification( subject: str, predicate: str, threat_d
         **TASK:**
         Use the 'Threat Mechanism First' principle to classify this threat into broad IUCN categories.
 
-        **MANDATORY REASONING STEPS - FOLLOW EXACTLY:**
-
         **STEP 1: IDENTIFY THE THREAT MECHANISM (IGNORE KEYWORDS)**
         What is the fundamental mechanism causing harm to the species?
 
@@ -687,15 +678,9 @@ async def get_coarse_iucn_classification( subject: str, predicate: str, threat_d
         **STEP 3: VERIFY WITH KEYWORDS** 
         Do the keywords support your mechanism-based choice? If not, trust the mechanism over keywords.
 
-        **CRITICAL EXAMPLES:**
-        - "Vegetation encroachment" = Biological system changes → **Category 7**
-        - "Reforestation eliminating habitat" = Biological system changes → **Category 7**  
-        - "Land abandonment → overgrowth" = Biological system changes → **Category 7**
-        - "Eutrophication effects" = Biological system changes → **Category 7**
-
         {COARSE_IUCN_CATEGORIES}
 
-        Provide your reasoning chain and rank the top 1-3 most likely categories with probability estimates.
+        Provide your reasoning chain and rank the top 1-3 most likely categories.
         """
 
     system_prompt = """You are an expert ecologist applying the IUCN-CMP Direct Threats Classification. Your primary goal is to identify the **immediate threat's fundamental mechanism** to ensure accurate classification.
@@ -711,14 +696,6 @@ async def get_coarse_iucn_classification( subject: str, predicate: str, threat_d
         - Is it **Biological System Changes**? (e.g., vegetation overgrowth, succession, eutrophication effects, fire suppression effects) -> This points toward **IUCN 7**.
         - Is it **Direct Resource Extraction**? (e.g., hunting, logging, fishing) -> This points toward **IUCN 5**.
         - Is it **Infrastructure/Transportation**? (e.g., road collisions, power line electrocution) -> This points toward **IUCN 4**.
-
-        ### **COMMON MISCLASSIFICATION TRAPS - AVOID THESE:**
-
-        **DO NOT be fooled by keywords:**
-        - "Reforestation" → NOT Category 2 (Agriculture) → **Category 7** (Biological System Changes)
-        - "Vegetation encroachment" → NOT Category 12 (Unknown) → **Category 7** (Biological System Changes)
-        - "Eutrophication effects" → NOT Category 9 (Pollution) → **Category 7** (Biological System Changes)
-        - "Land abandonment → overgrowth" → NOT Category 7.6 (Management) → **Category 7.5** (Biological Changes)
 
         **The mechanism determines the category:**
         - "Toxins" from "algal bloom" → **Biological Agent** (8), not Pollution (9)

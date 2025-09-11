@@ -254,11 +254,7 @@ async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, e
         
         results = []
         for i, (item, (is_relevant, score)) in enumerate(zip(batch_items, batch_results)):
-            if not is_relevant and has_shorebird_keywords(f"{item['title']} {item['abstract']}"):
-                logger.info(f"KEYWORD RESCUE: Low relevance ({score:.3f}) but has shorebird keywords: '{item['title'][:50]}...'")
-                results.append((True, score))
-            else:
-                results.append((is_relevant, score))
+            results.append((is_relevant, score))
         return results
         
     elif legacy_classifier and vectorizer:
@@ -270,11 +266,7 @@ async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, e
             probabilities = legacy_classifier.predict_proba(vec_text)[0]
             relevance_score = probabilities[1]
             
-            if not is_relevant and has_shorebird_keywords(f"{item['title']} {item['abstract']}"):
-                logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{item['title'][:50]}...'")
-                results.append((True, relevance_score))
-            else:
-                results.append((is_relevant, relevance_score))
+            results.append((is_relevant, relevance_score))
         return results
     else:
         logger.info(f"Using LLM fallback for {len(batch_items)} abstracts")
@@ -287,44 +279,17 @@ async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, e
             results = []
             for item, is_relevant in zip(batch_items, llm_results):
                 relevance_score = 1.0 if is_relevant else 0.0
-                if not is_relevant and has_shorebird_keywords(f"{item['title']} {item['abstract']}"):
-                    logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{item['title'][:50]}...'")
-                    results.append((True, relevance_score))
-                else:
-                    results.append((is_relevant, relevance_score))
+                results.append((is_relevant, relevance_score))
             return results
         else:
             return [(False, 0.0)] * len(batch_items)
 
-async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier):
+async def process_relevance_parallel_batches(batch_items, llm_setup, model_pool, vectorizer, legacy_classifier):
     if not batch_items:
         return []
     
     RELEVANCE_BATCH_SIZE = 100
     MAX_RELEVANCE_WORKERS = 5
-    
-    model_pool = []
-    if embed_model and embed_classifier and EMBEDDINGS_AVAILABLE:
-        logger.info(f"Creating pool of embeddings models for concurrent processing")
-        try:
-            from sentence_transformers import SentenceTransformer
-            pool_size = min(MAX_RELEVANCE_WORKERS, 5)
-            model_pool.append((embed_model, embed_classifier))
-            
-            for i in range(pool_size - 1):
-                try:
-                    model_instance = SentenceTransformer(embed_model.model_name_or_path if hasattr(embed_model, 'model_name_or_path') else 'all-mpnet-base-v2')
-                    model_pool.append((model_instance, embed_classifier))
-                    logger.info(f"Created model instance {i+2}/{pool_size}")
-                except Exception as e:
-                    logger.warning(f"Failed to create model instance {i+2}: {e}")
-                    model_pool.append((embed_model, embed_classifier))
-            logger.info(f"Model pool complete: {len(model_pool)} instances")
-        except Exception as e:
-            logger.warning(f"Failed to create model pool: {e}, falling back to shared model")
-            model_pool = [(embed_model, embed_classifier)]
-    else:
-        model_pool = [(embed_model, embed_classifier)]
     
     import itertools
     model_cycle = itertools.cycle(model_pool)
@@ -340,7 +305,7 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, embed_model
     
     async def process_sub_batch(sub_batch, worker_model, worker_classifier):
         async with semaphore:
-            logger.info(f"Worker processing batch of {len(sub_batch)} abstracts")
+            logger.debug(f"Worker processing batch of {len(sub_batch)} abstracts")
             return await check_relevance_batch_optimized(sub_batch, llm_setup, worker_model, worker_classifier, vectorizer, legacy_classifier)
     
     tasks = []
@@ -370,6 +335,10 @@ async def run_main_pipeline_logic(args):
     # Enable metrics tracking for detailed usage and cost analysis
     llm_sys = enable_metrics_tracking(llm_sys)
 
+    # Parse taxonomy list for targeted collection
+    taxonomy_list_str = getattr(args, 'taxonomy_list', None)
+    taxonomy_list = [t.strip() for t in taxonomy_list_str.split(',')] if taxonomy_list_str else []
+    
     max_from_args = getattr(args, 'max', None) 
     max_env = os.getenv('MAX_RESULTS', 'all')
     max_from_env = None
@@ -416,11 +385,32 @@ async def run_main_pipeline_logic(args):
         return run_base if 'run_base' in locals() else script_dir
 
     embed_model, embed_classifier = None, None
+    model_pool = []
     if EMBEDDINGS_AVAILABLE:
         logger.info("Setting up embeddings")
         embed_model_path = run_base / "models"
         embed_model_path.mkdir(parents=True, exist_ok=True)
         embed_model, embed_classifier = setup_embedding_classifier(models_path=embed_model_path)
+        
+        if embed_model and embed_classifier:
+            logger.info("Creating reusable model pool for parallel processing")
+            try:
+                from sentence_transformers import SentenceTransformer
+                pool_size = 5
+                model_pool.append((embed_model, embed_classifier))
+                
+                for i in range(pool_size - 1):
+                    try:
+                        model_instance = SentenceTransformer(embed_model.model_name_or_path if hasattr(embed_model, 'model_name_or_path') else 'all-mpnet-base-v2')
+                        model_pool.append((model_instance, embed_classifier))
+                        logger.info(f"Created model instance {i+2}/{pool_size}")
+                    except Exception as e:
+                        logger.warning(f"Failed to create model instance {i+2}: {e}")
+                        model_pool.append((embed_model, embed_classifier))
+                logger.info(f"Model pool complete: {len(model_pool)} instances ready for reuse")
+            except Exception as e:
+                logger.warning(f"Failed to create model pool: {e}, using single model")
+                model_pool = [(embed_model, embed_classifier)]
     
     results_path = run_base / "results"
     figures_path = run_base / "figures"
@@ -484,10 +474,6 @@ async def run_main_pipeline_logic(args):
             # Get the actual probability score for logging
             probabilities = embed_classifier.predict_proba(embed_model.encode([abstract]))[0]
             relevance_score = probabilities[1]
-            if not is_relevant and has_shorebird_keywords(f"{title} {abstract}"):
-                logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{title[:50]}...'")
-                return True, relevance_score  # override decision to True
-
             return is_relevant, relevance_score
         elif legacy_classifier and vectorizer:
             logger.debug(f"Using TF-IDF for '{title[:30]}...'")
@@ -496,20 +482,11 @@ async def run_main_pipeline_logic(args):
             vec_text = vectorizer.transform([abstract])
             probabilities = legacy_classifier.predict_proba(vec_text)[0]
             relevance_score = probabilities[1]
-            if not is_relevant and has_shorebird_keywords(f"{title} {abstract}"):
-                logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{title[:50]}...'")
-                return True, relevance_score  # override decision to True
-
             return is_relevant, relevance_score
         # fallback to LLM
         logger.debug(f"Using LLM for '{title[:30]}...'")
         is_relevant = await classify_abstract_relevance_ollama(title, abstract, llm_setup)
         relevance_score = 1.0 if is_relevant else 0.0
-
-        if not is_relevant and has_shorebird_keywords(f"{title} {abstract}"):
-            logger.info(f"KEYWORD RESCUE: Low relevance ({relevance_score:.3f}) but has shorebird keywords: '{title[:50]}...'")
-            return True, relevance_score  # override decision to True
-
         return is_relevant, relevance_score
 
     while True:
@@ -517,8 +494,8 @@ async def run_main_pipeline_logic(args):
             logger.info(f"Hit limit ({max_limit})")
             break
 
-        logger.info(f"Loading batch: skip={skip_rows}, max={batch_size} (shorebird papers found so far: {processed_count})")
-        df_batch = load_data_with_offset("new_iucn_test_subset.parquet", skip_rows, batch_size)
+        logger.info(f"Loading batch: skip={skip_rows}, max={batch_size} (relevant papers found so far: {processed_count})")
+        df_batch = load_data_with_offset("all_abstracts.parquet", skip_rows, batch_size)
         
         if len(df_batch) == 0:
             logger.info("No more data")
@@ -560,6 +537,24 @@ async def run_main_pipeline_logic(args):
             batch_items = filtered
             logger.info(f"After filter: {len(batch_items)}")
 
+        if taxonomy_list and max_limit != float('inf'):
+            if not hasattr(run_main_pipeline_logic, '_keyword_counts'):
+                run_main_pipeline_logic._keyword_counts = {keyword: 0 for keyword in taxonomy_list}
+                run_main_pipeline_logic._quota_per_keyword = max_limit // len(taxonomy_list)
+                logger.info(f"KEYWORD FILTERING ENABLED: {run_main_pipeline_logic._quota_per_keyword} per keyword for {taxonomy_list}")
+            
+            original_count = len(batch_items)
+            keyword_filtered = []
+            for item in batch_items:
+                for keyword in taxonomy_list:
+                    if (keyword.lower() in item['title'].lower() or keyword.lower() in item['abstract'].lower()):
+                        keyword_filtered.append(item)
+                        logger.info(f"KEYWORD MATCH for '{keyword}': '{item['title'][:80]}...'")
+                        break  # Only count this item for one keyword
+            
+            batch_items = keyword_filtered
+            logger.info(f"Keyword filtering: {len(keyword_filtered)}/{original_count} items matched keywords")
+
         if not batch_items:
             logger.info("Nothing left after filtering")
             if max_limit == float('inf') and total_scanned >= MAX_PARQUET_ROWS_TO_SCAN_IF_NO_MAX_RESULTS:
@@ -569,13 +564,23 @@ async def run_main_pipeline_logic(args):
         
         if batch_items:
             logger.info(f"Checking relevance for {len(batch_items)} abstracts using parallel batch workers")
-            results = await process_relevance_parallel_batches(batch_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier)
+            results = await process_relevance_parallel_batches(batch_items, llm_setup, model_pool, vectorizer, legacy_classifier)
             logger.info("Parallel batch relevance check done")
 
             for i, (is_relevant, relevance_score) in enumerate(results):
                 if is_relevant:
                     relevant_item = batch_items[i]
                     logger.info(f"RELEVANT #{processed_count + 1} (score: {relevance_score:.3f}): '{relevant_item['title']}'")
+                    
+                    # Update keyword quotas only for embeddings-relevant abstracts
+                    if taxonomy_list and max_limit != float('inf'):
+                        for keyword in taxonomy_list:
+                            if (keyword.lower() in relevant_item['title'].lower() or keyword.lower() in relevant_item['abstract'].lower()):
+                                if hasattr(run_main_pipeline_logic, '_keyword_counts'):
+                                    run_main_pipeline_logic._keyword_counts[keyword] += 1
+                                    logger.info(f"RELEVANT KEYWORD MATCH for '{keyword}': {run_main_pipeline_logic._keyword_counts[keyword]}/{run_main_pipeline_logic._quota_per_keyword}")
+                                break
+                    
                     chunk.append(relevant_item)
                     processed_count += 1 
 
@@ -587,7 +592,12 @@ async def run_main_pipeline_logic(args):
                             llm_setup, 
                             refinement_cache
                         )
-                        logger.info(f"Got {len(chunk_triplets)} triplets, {len(chunk_taxo)} taxonomy entries")                        
+                        logger.info(f"Got {len(chunk_triplets)} triplets, {len(chunk_taxo)} taxonomy entries")
+                        
+                        if chunk_triplets:
+                            intermediate_file = results_path / f"intermediate_triplets_{processed_count}.json"
+                            cache_enriched_triples(chunk_triplets, chunk_taxo, results_path)
+                            logger.info(f"SAVED intermediate results: {len(chunk_triplets)} triplets to {intermediate_file.parent}/enriched_triplets.json")                        
                         should_backfill = (processed_count >= max_limit)
                         
                         if should_backfill:
@@ -635,7 +645,7 @@ async def run_main_pipeline_logic(args):
                                 backfill_batch_size = 2000
                                 
                                 while len(backfill_candidates) < target_relevant_to_find:
-                                    backfill_df = load_data_with_offset("new_iucn_test_subset.parquet", skip_rows, backfill_batch_size)
+                                    backfill_df = load_data_with_offset("all_abstracts.parquet", skip_rows, backfill_batch_size)
                                     if len(backfill_df) == 0:
                                         logger.info("No more data available for backfill scanning.")
                                         break
@@ -654,7 +664,7 @@ async def run_main_pipeline_logic(args):
                                     
                                     if backfill_scan_items:
                                         backfill_results = await process_relevance_parallel_batches(
-                                            backfill_scan_items, llm_setup, embed_model, embed_classifier, vectorizer, legacy_classifier
+                                            backfill_scan_items, llm_setup, model_pool, vectorizer, legacy_classifier
                                         )
                                         
                                         for i, (is_relevant, relevance_score) in enumerate(backfill_results):
@@ -730,7 +740,6 @@ async def run_main_pipeline_logic(args):
                             break 
                     else:
                         item = batch_items[i]
-                        has_keywords = has_shorebird_keywords(f"{item['title']} {item['abstract']}")
                         with open(irrelevant_file, 'a', encoding='utf-8') as f:
                             import json
                             f.write(json.dumps({
@@ -738,8 +747,7 @@ async def run_main_pipeline_logic(args):
                                 "abstract": item['abstract'], 
                                 "doi": item['doi'],
                                 "relevance_score": float(relevance_score),
-                                "has_shorebird_keywords": has_keywords,
-                                "rejection_reason": "low_relevance_no_keywords" if not has_keywords else "low_relevance_with_keywords"
+                                "rejection_reason": "low_relevance"
                             }) + '\n')
         
         if processed_count >= max_limit:
@@ -1069,7 +1077,13 @@ async def process_abstract_chunk(
 
     logger.info(f"Classifying threat sentiment for {len(verified_triplets)} triplets.")
     threat_classification_tasks = []
-    for s, p, o, d, evidence in verified_triplets:
+    for triplet in verified_triplets:
+        if len(triplet) == 5:
+            s, p, o, d, evidence = triplet
+        else:
+            # Handle 4-element triplets by adding empty evidence
+            s, p, o, d = triplet
+            evidence = ""
         threat_desc, _, _, _ = parse_and_validate_object(o)
         threat_classification_tasks.append(
             classify_threat_for_subject(s, p, threat_desc, llm_setup, refinement_cache)
@@ -1080,7 +1094,12 @@ async def process_abstract_chunk(
     triplets_surviving_threat_check = []
     for i, result in enumerate(threat_classification_results):
         if result:
-            triplets_surviving_threat_check.append(verified_triplets[i])
+            triplet = verified_triplets[i]
+            if len(triplet) == 5:
+                triplets_surviving_threat_check.append(triplet)
+            else:
+                s, p, o, d = triplet
+                triplets_surviving_threat_check.append((s, p, o, d, ""))
             classification = result.get('classification', 'N/A')
             logger.info(f"Threat check PASSED for triplet. Classification: {classification}")
         else:

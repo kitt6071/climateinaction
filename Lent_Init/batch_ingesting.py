@@ -84,14 +84,14 @@ async def classify_abstract_relevance_ollama(title: str, abstract: str, llm_setu
             return cached
     
     prompt = f"""
-            Analyze this research abstract and determine if it's relevant to climate change impacts on wildlife/biodiversity.
+            Analyze this research abstract and determine if it's relevant to wildlife conservation and biodiversity research.
 
             Title: {title}
             Abstract: {abstract}
 
             Respond with ONLY 'YES' or 'NO':
-            - YES: If the abstract discusses climate change effects on species, ecosystems, or biodiversity
-            - NO: If it's primarily about other topics (pollution, habitat loss from non-climate causes, etc.)
+            - YES: If the abstract discusses impacts on species, ecosystems, biodiversity, or conservation biology
+            - NO: If it's primarily about other topics (human health, agriculture without wildlife impacts, pure methodology, etc.)
             """
     
     try:
@@ -99,7 +99,7 @@ async def classify_abstract_relevance_ollama(title: str, abstract: str, llm_setu
         
         response = await llm_generate(
             prompt=prompt,
-            system="You are an expert at classifying research abstracts for relevance to climate change impacts on wildlife.",
+            system="You are an expert at classifying research abstracts for relevance to wildlife conservation and biodiversity research.",
             model=llm_setup['model'],
             temp=0.1,
             llm_setup=llm_setup
@@ -152,10 +152,10 @@ def predict_relevance_embeddings(abstract_text: str, model, classifier, threshol
         embedding = model.encode([abstract_text])
         # Get probability scores and apply optimized threshold
         probabilities = classifier.predict_proba(embedding)[0]
-        relevance_score = probabilities[1]  # Probability of being relevant (shorebird)
+        relevance_score = probabilities[1]  # Probability of being relevant (wildlife)
         is_relevant = relevance_score >= threshold
         
-        if relevance_score > 0.3:  # Log potential shorebird papers
+        if relevance_score > 0.3:  # Log potential wildlife papers
             logger.info(f"Embedding classifier: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
         return bool(is_relevant)
     except Exception as e:
@@ -206,6 +206,8 @@ if __name__ == "__main__":
                        help='JSON config override')
     parser.add_argument('--taxonomy', type=str,
                        help='Filter by taxonomic term')
+    parser.add_argument('--taxonomy_list', type=str,
+                       help='Comma-separated list of keywords for balanced collection')
     parser.add_argument('--max', type=str,
                        help='Max abstracts to process')
     parser.add_argument('--verify-species-wikispecies', type=str, metavar='FILEPATH',

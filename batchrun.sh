@@ -1,5 +1,6 @@
 
 TAXONOMY_ARG=""
+TAXONOMY_LIST_ARG=""
 MAX_RESULTS_ARG=""
 MODEL_NAME_ARG="" 
 
@@ -7,6 +8,10 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --taxonomy)
       TAXONOMY_ARG="$2"
+      shift 2
+      ;;
+    --taxonomy_list)
+      TAXONOMY_LIST_ARG="$2"
       shift 2
       ;;
     --max)
@@ -19,7 +24,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option for run.sh: $1"
-      echo "Usage: ./run.sh [--taxonomy TERM] [--max NUMBER] [--model_name MODEL_STRING]"
+      echo "Usage: ./run.sh [--taxonomy TERM] [--taxonomy_list LIST] [--max NUMBER] [--model_name MODEL_STRING]"
       exit 1
       ;;
   esac
@@ -49,7 +54,19 @@ WIKISPECIES_LOG_FILE="${DYNAMIC_RESULTS_PATH}/wikispecies_verification_log.json"
 mkdir -p Lent_Init/runs
 
 PIPELINE_COMMANDS="echo '--- Step 1: Running Main Data Processing Pipeline ---'; "
-PIPELINE_COMMANDS+="python -m Lent_Init.batch_ingesting --enable-batch-processing --run-main-pipeline; "
+
+PIPELINE_CMD="python -m Lent_Init.batch_ingesting --enable-batch-processing --run-main-pipeline"
+if [[ -n "$TAXONOMY_ARG" ]]; then
+  PIPELINE_CMD+=" --taxonomy \"$TAXONOMY_ARG\""
+fi
+if [[ -n "$TAXONOMY_LIST_ARG" ]]; then
+  PIPELINE_CMD+=" --taxonomy_list \"$TAXONOMY_LIST_ARG\""
+fi
+if [[ -n "$MAX_RESULTS_ARG" ]]; then
+  PIPELINE_CMD+=" --max \"$MAX_RESULTS_ARG\""
+fi
+
+PIPELINE_COMMANDS+="$PIPELINE_CMD; "
 PIPELINE_COMMANDS+="echo '--- Step 2: Running Wikispecies Verification ---'; "
 PIPELINE_COMMANDS+="if [ -f \"$WIKI_SPECIES_LIST_FILE\" ]; then "
 PIPELINE_COMMANDS+="python -m Lent_Init.batch_ingesting --verify-species-wikispecies \"$WIKI_SPECIES_LIST_FILE\" --target_model_name \"$MODEL_NAME_FOR_RUN\" --target_max_results \"$MAX_RESULTS_FOR_PATH_STR\"; "
