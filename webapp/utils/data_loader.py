@@ -17,12 +17,24 @@ def download_data_from_url(url, local_path):
     #Download data file from URL to local path
     try:
         logger.info(f"Downloading data from {url}")
-        response = requests.get(url, stream=True, timeout=300)
+        response = requests.get(url, stream=True, timeout=1800)
         response.raise_for_status()
         
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+        chunk_size = 1024 * 1024
+        
         with open(local_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if downloaded % (200 * 1024 * 1024) == 0:
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            logger.info(f"Download progress: {progress:.1f}% ({downloaded/(1024*1024):.0f}/{total_size/(1024*1024):.0f} MB)")
+                        else:
+                            logger.info(f"Downloaded: {downloaded/(1024*1024):.0f} MB")
         
         logger.info(f"Successfully downloaded data to {local_path}")
         return True
@@ -106,15 +118,30 @@ def load_data_if_needed():
         if parquet_file_path:
             try:
                 logger.info(f"Loading abstracts from {parquet_file_path}...")
+                
+                import os
+                file_size = os.path.getsize(parquet_file_path)
+                logger.info(f"Parquet file size: {file_size / (1024*1024):.1f} MB")
+                
+                if file_size == 0:
+                    logger.error(f"Parquet file {parquet_file_path} is empty (0 bytes)")
+                    return config.data_loaded
+                
+                logger.info("Reading parquet file with polars...")
                 config.abstracts_df = pl.read_parquet(parquet_file_path)
-                # Pre-process DOIs for faster lookups
+                logger.info(f"Successfully read parquet: {len(config.abstracts_df)} rows")
+                
+                logger.info("Adding lowercase DOI column...")
                 config.abstracts_df = config.abstracts_df.with_columns(
                     pl.col("doi").str.to_lowercase().alias("doi_lower")
                 )
                 config.parquet_loaded = True
-                logger.info(f"Parquet data loaded: {len(config.abstracts_df)} abstracts available.")
+                logger.info(f"✅ Parquet data loaded: {len(config.abstracts_df)} abstracts available.")
             except Exception as e:
-                logger.error(f"Error loading parquet file {parquet_file_path}: {e}")
+                logger.error(f"❌ Error loading parquet file {parquet_file_path}: {e}")
+                logger.error(f"Exception type: {type(e).__name__}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
         else:
             logger.error("No parquet data file found from any source.")
 
