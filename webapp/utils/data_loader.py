@@ -122,24 +122,17 @@ def load_data_if_needed():
                     logger.error(f"Parquet file {parquet_file_path} is empty (0 bytes)")
                     return config.data_loaded
                 
-                logger.info("Reading parquet file with polars...")
-                config.abstracts_df = pl.scan_parquet(parquet_file_path).collect(streaming=True)
+                logger.info("Reading parquet file lazily (will not load into memory)...")
+                lf = pl.scan_parquet(parquet_file_path)
                 
-                config.abstracts_df = config.abstracts_df.with_columns(
+                config.abstracts_df = lf.with_columns(
                     pl.col("doi").str.to_lowercase().alias("doi_lower")
                 )
+                
                 config.parquet_loaded = True
-                logger.info(f"✅ Parquet data loaded: {len(config.abstracts_df)} abstracts available.")
-            except MemoryError as e:
-                logger.error(f"❌ Memory error loading parquet file {parquet_file_path}: {e}")
-                logger.error("File too large for available memory. Consider increasing container memory.")
-                config.abstracts_df = None
+                logger.info(f"✅ Parquet file is ready for lazy querying.")
             except Exception as e:
-                logger.error(f"❌ Error loading parquet file {parquet_file_path}: {e}")
-                logger.error(f"Exception type: {type(e).__name__}")
-                import traceback
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                config.abstracts_df = None
+                logger.error(f"❌ Error preparing lazy parquet reader for {parquet_file_path}: {e}", exc_info=True)
         else:
             logger.error("No parquet data file found from any source.")
 

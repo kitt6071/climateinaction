@@ -344,59 +344,45 @@ def get_random_triplet():
         if not session_id:
             return jsonify({"success": False, "message": "Session ID required for review tracking."}), 400
 
-        abstract_dois = set(config.abstracts_df['doi_lower'].to_list())
-        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data}
-        valid_dois = list(abstract_dois.intersection(triplet_dois))
+        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data if t.get('doi')}
+        valid_dois_df = config.abstracts_df.filter(pl.col('doi_lower').is_in(list(triplet_dois)))
+        valid_dois = valid_dois_df.select('doi_lower').collect().to_series().to_list()
 
         if not valid_dois:
             return jsonify({"success": False, "message": "No matching DOIs found between abstracts and triplets."}), 404
 
         reviewed_dois = get_reviewed_dois()
         assigned_dois = get_assigned_dois()
-        session_assigned = get_session_assigned_dois(session_id)
         
-        valid_dois = [d.lower().strip() for d in valid_dois]
-        reviewed_dois = {d.lower().strip() for d in reviewed_dois}
-        assigned_dois = {d.lower().strip() for d in assigned_dois}
-        session_assigned = {d.lower().strip() for d in session_assigned}
-
-        available_dois = [doi for doi in valid_dois 
-                         if doi not in reviewed_dois 
-                         and (doi not in assigned_dois or doi in session_assigned)]
-        
-        if not available_dois:
-            return jsonify({"success": False, "message": "No more triplets available for review."}), 404
-
-        selected_doi_lower = random.choice(available_dois)
-        
-        track_doi_assignment(session_id, selected_doi_lower)
-        
-        abstract_row = config.abstracts_df.filter(pl.col("doi_lower") == selected_doi_lower).row(0, named=True)
-        
-        associated_triplets = [
-            {k: v for k, v in t.items() if k != 'embedding_tensor'}
-            for t in config.triplets_data 
-            if t.get('doi', '').lower().strip() == selected_doi_lower
+        unreviewed_dois = [
+            doi for doi in valid_dois 
+            if doi not in reviewed_dois and doi not in assigned_dois
         ]
 
-        abstract_text = abstract_row.get("abstract", "")
-        if abstract_text:
-            import re
-            abstract_text = re.sub(r'<[^>]+>', '', abstract_text).strip()
-            abstract_text = re.sub(r'\s+', ' ', abstract_text).strip()
+        if not unreviewed_dois:
+            return jsonify({"success": False, "message": "All available abstracts have been reviewed or assigned."}), 200
+            
+        selected_doi = random.choice(unreviewed_dois)
+        track_doi_assignment(session_id, selected_doi)
+        abstract_row_df = config.abstracts_df.filter(pl.col("doi_lower") == selected_doi).collect()
+        
+        abstract_row = {}
+        if not abstract_row_df.is_empty():
+            abstract_row = abstract_row_df.row(0, named=True)
+
+        group_triplets = [t for t in config.triplets_data if t.get('doi', '').lower() == selected_doi.lower()]
 
         response_data = {
-            "doi": abstract_row.get("doi"),
-            "title": abstract_row.get("title", "Title not available"),
-            "abstract": abstract_text,
-            "triplets": associated_triplets
-        }
-        
-        return jsonify({
             "success": True,
-            "group": response_data
-        })
-        
+            "group": {
+                "doi": selected_doi,
+                "title": abstract_row.get("title", "Title not found"),
+                "abstract": abstract_row.get("abstract", "Abstract not found."),
+                "triplets": group_triplets
+            }
+        }
+        return jsonify(response_data)
+
     except Exception as e:
         logger.error(f"Error getting random triplet group: {e}", exc_info=True)
         return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
@@ -471,30 +457,30 @@ def submit_review():
 @api_bp.route('/review-progress', methods=['GET'])
 def get_review_progress():
     """Get review progress statistics"""
-    try:
-        if not load_data_if_needed() or not config.triplets_data:
-            return jsonify({"success": False, "message": "Triplet data not loaded"}), 500
-        
-        if config.abstracts_df is None:
-            return jsonify({"success": False, "message": "Abstract data not loaded. Review functionality requires parquet data."}), 500
+    if not config.data_loaded:
+        return jsonify({"success": False, "message": "Data not loaded"}), 500
 
-        abstract_dois = set(config.abstracts_df['doi_lower'].to_list())
-        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data}
-        total_dois = len(abstract_dois.intersection(triplet_dois))
-        
+    try:
+        # Lazily calculate the total number of abstracts that have corresponding triplets
+        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data if t.get('doi')}
+        total_dois = config.abstracts_df.filter(
+            pl.col('doi_lower').is_in(list(triplet_dois))
+        ).select(pl.count()).collect()[0, 0]
+
         reviewed_dois = get_reviewed_dois()
         assigned_dois = get_assigned_dois()
-        reviewed_dois = {d.lower().strip() for d in reviewed_dois}
-        assigned_dois = {d.lower().strip() for d in assigned_dois}
-        clean_assigned = assigned_dois - reviewed_dois
+        
+        reviewed_set = {d.lower().strip() for d in reviewed_dois}
+        assigned_set = {d.lower().strip() for d in assigned_dois}
+        clean_assigned = assigned_set - reviewed_set
         
         return jsonify({
             "success": True,
             "total_abstracts": total_dois,
-            "reviewed": len(reviewed_dois),
+            "reviewed": len(reviewed_set),
             "assigned": len(clean_assigned),
-            "available": total_dois - len(reviewed_dois) - len(clean_assigned),
-            "progress_percentage": round((len(reviewed_dois) / total_dois * 100), 1) if total_dois > 0 else 0
+            "available": total_dois - len(reviewed_set) - len(clean_assigned),
+            "progress_percentage": round((len(reviewed_set) / total_dois * 100), 1) if total_dois > 0 else 0
         })
         
     except Exception as e:
