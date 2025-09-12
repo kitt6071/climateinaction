@@ -12,10 +12,10 @@ DATA_SOURCES = [
 DATA_PATH = "data_with_embeddings.json"
 
 PARQUET_SOURCES = [
-    os.path.join(PROJECT_ROOT, "Lent_Init/shorebirds.parquet"),
-    "https://storage.googleapis.com/climateinaction/shorebirds.parquet"
+    os.path.join(PROJECT_ROOT, "Lent_Init/all_abstracts.parquet"),
+    "https://storage.googleapis.com/climateinaction/all_abstracts.parquet"
 ]
-PARQUET_PATH = "shorebirds.parquet"
+PARQUET_PATH = "all_abstracts.parquet"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
