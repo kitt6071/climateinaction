@@ -288,8 +288,8 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, model_pool,
     if not batch_items:
         return []
     
-    RELEVANCE_BATCH_SIZE = 100
-    MAX_RELEVANCE_WORKERS = 5
+    RELEVANCE_BATCH_SIZE = 500
+    MAX_RELEVANCE_WORKERS = 20
     
     import itertools
     model_cycle = itertools.cycle(model_pool)
@@ -396,7 +396,7 @@ async def run_main_pipeline_logic(args):
             logger.info("Creating reusable model pool for parallel processing")
             try:
                 from sentence_transformers import SentenceTransformer
-                pool_size = 5
+                pool_size = 10
                 model_pool.append((embed_model, embed_classifier))
                 
                 for i in range(pool_size - 1):
@@ -457,7 +457,7 @@ async def run_main_pipeline_logic(args):
     
     chunk = []
     
-    batch_size = 1000
+    batch_size = 5000
     skip_rows = 0
     processed_count = 0 
     total_scanned = 0
@@ -630,6 +630,10 @@ async def run_main_pipeline_logic(args):
                             while len(successful_abstracts) < target_successful_abstracts and backfill_attempt < max_backfill_attempts:
                                 backfill_attempt += 1
                                 needed_replacements = target_successful_abstracts - len(successful_abstracts)
+                                
+                                if taxonomy_list:
+                                    logger.info(f"Backfill attempt #{backfill_attempt} with keyword filtering: Need {needed_replacements} successful abstracts matching keywords: {taxonomy_list}")
+                                    
                                 logger.info(f"Backfill attempt #{backfill_attempt}: Need {needed_replacements} successful abstracts, trying to find {batch_size} relevant abstracts")
                                 
                                 backfill_candidates = []
@@ -653,6 +657,7 @@ async def run_main_pipeline_logic(args):
                                     logger.info(f"Backfill scanning batch of {len(backfill_df)} abstracts (found {len(backfill_candidates)}/{target_relevant_to_find} candidates so far)")
                                     
                                     backfill_scan_items = []
+                                    keyword_filtered_count = 0
                                     for i, row_data in enumerate(backfill_df.iter_rows(named=True)):
                                         abstract_text = row_data["abstract"]
                                         title_text = row_data["title"]
@@ -660,7 +665,20 @@ async def run_main_pipeline_logic(args):
                                         if not doi_text: continue
                                         if "captivity" in abstract_text.lower() or len(abstract_text) < 50:
                                             continue
+                                        
+                                        if taxonomy_list:
+                                            has_keyword = any(
+                                                keyword.lower() in title_text.lower() or keyword.lower() in abstract_text.lower()
+                                                for keyword in taxonomy_list
+                                            )
+                                            if not has_keyword:
+                                                continue
+                                            keyword_filtered_count += 1
+                                        
                                         backfill_scan_items.append({'title': title_text, 'abstract': abstract_text, 'doi': doi_text, 'idx': skip_rows + i})
+                                    
+                                    if taxonomy_list:
+                                        logger.info(f"Keyword filtering in backfill: {keyword_filtered_count} matches found out of {len(backfill_df)} scanned")
                                     
                                     if backfill_scan_items:
                                         backfill_results = await process_relevance_parallel_batches(

@@ -15,13 +15,13 @@ from concurrent.futures import ThreadPoolExecutor
 from .setup import setup_llm
 
 BATCH_CONFIG = {
-    'summary_batch_size': 20, 
-    'triplet_batch_size': 15,   
-    'max_summary_workers': 50, 
-    'max_triplet_workers': 40, 
-    'max_enrichment_workers': 30, 
+    'summary_batch_size': 100,
+    'triplet_batch_size': 75,
+    'max_summary_workers': 200,
+    'max_triplet_workers': 150,
+    'max_enrichment_workers': 100,
     'enable_batch_processing': True,
-    'processing_batch_size': 100
+    'processing_batch_size': 500
 }
 
 logger = logging.getLogger("pipeline")
