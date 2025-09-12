@@ -126,9 +126,9 @@ def load_data_if_needed():
                     logger.error(f"Parquet file {parquet_file_path} is empty (0 bytes)")
                     return config.data_loaded
                 
-                logger.info("Reading parquet file with polars...")
+                logger.info("Reading parquet file with polars (streaming for memory efficiency)...")
                 logger.info("⏳ Starting parquet read operation...")
-                config.abstracts_df = pl.read_parquet(parquet_file_path)
+                config.abstracts_df = pl.scan_parquet(parquet_file_path).collect(streaming=True)
                 logger.info("⏳ Parquet read completed, checking data...")
                 logger.info(f"Successfully read parquet: {len(config.abstracts_df)} rows")
                 

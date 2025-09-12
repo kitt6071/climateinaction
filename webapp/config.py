@@ -9,13 +9,14 @@ DATA_SOURCES = [
     os.path.join(PROJECT_ROOT, "backend/data_with_embeddings.json"),
     "https://storage.googleapis.com/climateinaction/data_with_embeddings.json"  # Google Cloud Storage
 ]
-DATA_PATH = "data_with_embeddings.json"
+DATA_PATH = "/data/data_with_embeddings.json"
 
 PARQUET_SOURCES = [
+    "/data/all_abstracts.parquet",  # Check Railway volume first
     os.path.join(PROJECT_ROOT, "Lent_Init/all_abstracts.parquet"),
     "https://storage.googleapis.com/climateinaction/all_abstracts.parquet"
 ]
-PARQUET_PATH = "all_abstracts.parquet"
+PARQUET_PATH = "/data/all_abstracts.parquet"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
