@@ -1,3 +1,5 @@
+Flask==2.1.2
+gunicorn
 polars
 sentence-transformers
 scikit-learn
