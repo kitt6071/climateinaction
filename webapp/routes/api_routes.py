@@ -334,8 +334,11 @@ def perform_dimensionality_reduction():
 @api_bp.route('/random-triplet', methods=['GET'])
 def get_random_triplet():
     try:
-        if not load_data_if_needed() or config.abstracts_df is None or not config.triplets_data:
-            return jsonify({"success": False, "message": "Data not loaded or unavailable."}), 500
+        if not load_data_if_needed() or not config.triplets_data:
+            return jsonify({"success": False, "message": "Triplet data not loaded or unavailable."}), 500
+        
+        if config.abstracts_df is None:
+            return jsonify({"success": False, "message": "Abstract data not loaded. Review functionality requires parquet data."}), 500
 
         session_id = request.args.get('session_id')
         if not session_id:
@@ -469,8 +472,11 @@ def submit_review():
 def get_review_progress():
     """Get review progress statistics"""
     try:
-        if not load_data_if_needed() or config.abstracts_df is None or not config.triplets_data:
-            return jsonify({"success": False, "message": "Data not loaded"}), 500
+        if not load_data_if_needed() or not config.triplets_data:
+            return jsonify({"success": False, "message": "Triplet data not loaded"}), 500
+        
+        if config.abstracts_df is None:
+            return jsonify({"success": False, "message": "Abstract data not loaded. Review functionality requires parquet data."}), 500
 
         abstract_dois = set(config.abstracts_df['doi_lower'].to_list())
         triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data}
