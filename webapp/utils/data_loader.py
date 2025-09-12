@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 def download_data_from_url(url, local_path):
     #Download data file from URL to local path
     try:
+        # Ensure the target directory exists before writing the file
+        parent_dir = os.path.dirname(local_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+            
         logger.info(f"Downloading data from {url}")
         response = requests.get(url, stream=True, timeout=1800)
         response.raise_for_status()
