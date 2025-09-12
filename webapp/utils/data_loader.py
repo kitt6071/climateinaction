@@ -119,7 +119,6 @@ def load_data_if_needed():
             try:
                 logger.info(f"Loading abstracts from {parquet_file_path}...")
                 
-                import os
                 file_size = os.path.getsize(parquet_file_path)
                 logger.info(f"Parquet file size: {file_size / (1024*1024):.1f} MB")
                 
