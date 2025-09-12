@@ -52,23 +52,14 @@ def load_data_if_needed():
         return True
     
     data_file_path = None
-    
-    # Check each data source
     for source in DATA_SOURCES:
-        if source.startswith("http"):
-            logger.info(f"Attempting to download from {source}")
-            if download_data_from_url(source, DATA_PATH):
-                data_file_path = DATA_PATH
-                logger.info(f"Successfully downloaded data from cloud storage")
-                break
-        else:
-            if os.path.exists(source):
-                data_file_path = source
-                logger.info(f"Found local data file at {data_file_path}")
-                break
-    
+        if os.path.exists(source):
+            data_file_path = source
+            logger.info(f"Found local webapp data file at {data_file_path}")
+            break
+
     if not data_file_path:
-        logger.error("No data file found from any source")
+        logger.error("FATAL: No webapp data file found. Was the download script run?")
         return False
     
     logger.info(f"Loading data from {data_file_path}...")
