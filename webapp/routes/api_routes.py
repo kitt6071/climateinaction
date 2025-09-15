@@ -371,13 +371,18 @@ def get_random_triplet():
 
         group_triplets = [t for t in config.triplets_data if t.get('doi', '').lower() == selected_doi.lower()]
 
+        clean_triplets = []
+        for triplet in group_triplets:
+            clean_triplet = {k: v for k, v in triplet.items() if k not in ['embedding_tensor', 'embedding']}
+            clean_triplets.append(clean_triplet)
+
         response_data = {
             "success": True,
             "group": {
                 "doi": selected_doi,
                 "title": abstract_row.get("title", "Title not found"),
                 "abstract": abstract_row.get("abstract", "Abstract not found."),
-                "triplets": group_triplets
+                "triplets": clean_triplets
             }
         }
         return jsonify(response_data)
