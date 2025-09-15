@@ -344,9 +344,7 @@ def get_random_triplet():
         if not session_id:
             return jsonify({"success": False, "message": "Session ID required for review tracking."}), 400
 
-        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data if t.get('doi')}
-        valid_dois_df = config.abstracts_df.filter(pl.col('doi_lower').is_in(list(triplet_dois)))
-        valid_dois = valid_dois_df.select('doi_lower').collect().to_series().to_list()
+        valid_dois = config.abstracts_df['doi_lower'].to_list()
 
         if not valid_dois:
             return jsonify({"success": False, "message": "No matching DOIs found between abstracts and triplets."}), 404
@@ -364,10 +362,11 @@ def get_random_triplet():
             
         selected_doi = random.choice(unreviewed_dois)
         track_doi_assignment(session_id, selected_doi)
-        abstract_row_df = config.abstracts_df.filter(pl.col("doi_lower") == selected_doi).collect()
+        
+        abstract_row_df = config.abstracts_df.filter(pl.col("doi_lower") == selected_doi)
         
         abstract_row = {}
-        if not abstract_row_df.is_empty():
+        if len(abstract_row_df) > 0:
             abstract_row = abstract_row_df.row(0, named=True)
 
         group_triplets = [t for t in config.triplets_data if t.get('doi', '').lower() == selected_doi.lower()]
@@ -461,11 +460,7 @@ def get_review_progress():
         return jsonify({"success": False, "message": "Data not loaded"}), 500
 
     try:
-        # Lazily calculate the total number of abstracts that have corresponding triplets
-        triplet_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data if t.get('doi')}
-        total_dois = config.abstracts_df.filter(
-            pl.col('doi_lower').is_in(list(triplet_dois))
-        ).select(pl.count()).collect()[0, 0]
+        total_dois = len(config.abstracts_df)
 
         reviewed_dois = get_reviewed_dois()
         assigned_dois = get_assigned_dois()
