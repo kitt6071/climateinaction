@@ -122,15 +122,21 @@ def load_data_if_needed():
                     logger.error(f"Parquet file {parquet_file_path} is empty (0 bytes)")
                     return config.data_loaded
                 
-                logger.info("Reading parquet file lazily (will not load into memory)...")
+                logger.info("Extracting only needed abstracts based on triplet DOIs...")
+                
+                needed_dois = {t.get('doi', '').lower().strip() for t in config.triplets_data if t.get('doi')}
+                logger.info(f"Need abstracts for {len(needed_dois)} DOIs from triplets")
+                
                 lf = pl.scan_parquet(parquet_file_path)
-                
-                config.abstracts_df = lf.with_columns(
+                subset_df = lf.filter(
+                    pl.col("doi").str.to_lowercase().is_in(list(needed_dois))
+                ).with_columns(
                     pl.col("doi").str.to_lowercase().alias("doi_lower")
-                )
+                ).collect()
                 
+                config.abstracts_df = subset_df
                 config.parquet_loaded = True
-                logger.info(f"✅ Parquet file is ready for lazy querying.")
+                logger.info(f"Loaded {len(subset_df)} abstracts (subset) instead of entire 2.7GB file")
             except Exception as e:
                 logger.error(f"❌ Error preparing lazy parquet reader for {parquet_file_path}: {e}", exc_info=True)
         else:
