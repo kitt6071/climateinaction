@@ -136,20 +136,20 @@ First, determine if the abstract contains documented negative impacts on a speci
 If the abstract is relevant, perform the following extractions.
 
 **TASK A: SPECIES EXTRACTION**
-Extract specific species or taxonomic groups mentioned.
-- Only include species/groups directly mentioned in the text
-- Prefer specific named species (e.g., "Charadrius melodus") over aggregates ("shorebirds"), but extract the aggregate if it's all that is mentioned
-- Keep scientific names exactly as written
+Extract specific species or taxonomic groups mentioned in the abstract.
+- **DO NOT infer, assume, or generate** species names that are not explicitly stated in the abstract
+- Keep scientific names exactly as written in the source text
 - Do not combine multiple species into one entry
-- If the study groups multiple species (e.g., 'shorebirds', 'seabirds'), extract the aggregate term as written, but also *CRITICALLY* extract any individual species mentioned
+- If the study groups multiple species (e.g., 'shorebirds', 'seabirds') and provides examples like 'curlew', 'dunlin', extract the aggregate term as written, but also extract any individual species mentioned in the abstract.
 
 **TASK B: THREAT EXTRACTION**
 Extract the CAUSES of negative impacts (i.e., the threats).
+- **DO NOT add percentages, numbers, or statistics** that are not explicitly stated in the abstract
 - **CRITICAL RULE:** A "threat" is the *origin* or *cause* of harm. DO NOT extract the symptoms, effects, or consequences.
     - **Example 1:** If a species "suffers mortality due to illegal hunting", the threat is "illegal hunting", NOT "mortality".
     - **Example 2:** If a species "experiences habitat loss leading to population decline", the threat is "habitat loss", NOT "population decline".
     - **Example 3:** If birds "suffer from severe aspergillosis", the threat is "severe aspergillosis", NOT "suffering".
-- **BE SPECIFIC:** Capture the specific description of the threat (e.g., extract "habitat loss from logging", not just "habitat loss"; extract "mercury (Hg) exposure", not just "pollution").
+- **BE SPECIFIC:** Capture the specific description of the threat exactly as written in the text (e.g., extract "habitat loss from logging", not just "habitat loss"; extract "mercury (Hg) exposure", not just "pollution").
 - Only extract threats documented by field observations or monitoring in wild populations, not from lab studies or theoretical models.
 
 **TASK C: EVIDENCE SENTENCES**
@@ -292,7 +292,7 @@ For each distinct negative relationship you identify, construct a triplet with a
     * **INCORRECT**: `{"subject": "BirdA", "predicate_summary": "experiences habitat loss", "object": "habitat loss"}`
     * **CORRECT**: `{"subject": "BirdA", "predicate_summary": "experiences population decline", "object": "widespread habitat loss"}`
 * **predicate_summary**: Keep this concise and focused on the biological effect (e.g., "reduced nesting success", "increased mortality", "impaired health")
-* **predicate_evidence**: Must be actual text from the abstract that demonstrates the relationship, not your interpretation
+* **predicate_evidence**: Must be a direct quote or paraphrase from the abstract that demonstrates the relationship, not your interpretation or inference
 * **Deduplication Rules:** 
     - If multiple similar impacts are mentioned for the same species-threat pair, create ONE comprehensive triplet that captures the primary effect.
     - If distinctly different biological processes are affected (e.g., both survival AND reproduction), create separate triplets.
@@ -313,14 +313,14 @@ For each distinct negative relationship you identify, construct a triplet with a
     * **predicate_evidence**: `Songbird populations experience impaired avian health due to mercury (Hg) exposure from industrial runoff`
 
 For each relationship triplet, provide:
-- subject: Species name from provided list (use exact names from provided lists only)
+- subject: Species name from provided list (use exact names from provided lists from the abstractonly)
 - predicate_summary: Impact summary focusing on the biological effect
 - predicate_evidence: Direct quote or paraphrase from abstract that supports the relationship
 - object: Threat description from provided list (use exact names from provided lists only)
 - reason: Brief explanation of why this relationship exists based on the abstract text (maximum 1 sentence)
 
 CRITICAL: 
-- **Predicate should be DETAILED and COMPREHENSIVE**: Include specific biological effects, mechanisms, timeframes, severity indicators, and causal pathways when mentioned in the abstract (e.g., "faces increased risk of overheating of eggs due to a compromise between thermal protection and camouflage, resulting from breeding later in the season when exposed to")
+- Predicate: **DO NOT add percentages, numbers, or statistics** that are not explicitly stated in the abstract
 - Subject/Object: Use exact names from provided lists only
 - Reason: Maximum 1 sentence explaining the relationship
 
@@ -727,11 +727,10 @@ async def extract_triplets(summary: str, llm_setup, doi: str) -> List[Tuple[str,
         Rules:
         1. Describe the harmful consequence CAUSED BY the threat. Do NOT describe the benefits of habitat or resources that are lost or affected.
         2. Focus ONLY on the negative impact mechanism (e.g., 'reduces nesting success', 'causes poisoning', 'increases predation risk', 'blocks migration route').
-        3. Include specific biological, physiological, or ecological processes involved in the harm.
-        4. Include quantitative measures of the negative impact when available (e.g., "reduces breeding success by 45%").
-        5. Provide direct evidence or strong inference from the text for the mechanism.
-        6. Assign a confidence level (high, medium, low) based on how clearly the negative impact mechanism is described.
-        7. If multiple distinct negative mechanisms exist for the same species-threat pair, list them separately.
+        3. Include specific biological, physiological, or ecological processes involved in the harm described in the abstract.
+        4. Provide direct evidence from the text for the mechanism.
+        5. Assign a confidence level (high, medium, low) based on how clearly the negative impact mechanism is described.
+        6. If multiple distinct negative mechanisms exist for the same species-threat pair, list them separately.
 
         Example:
         - Text mentions: "Shoreline development leads to loss of vegetated nesting sites crucial for Wood Ducks."
@@ -1096,13 +1095,17 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
         "You are a meticulous scientific data reviewer. Your task is to perform a quality control check on a proposed species-threat relationship (triplet), comparing it against the provided abstract and a set of rules."
         "\n\n### **Review Checklist**"
         "\n\nEvaluate the triplet based on ALL of the following criteria:"
-        "\n\n1. **Evidentiary Support**: Is the relationship an observed result or conclusion explicitly stated in the abstract?"
+        "\n\n1. **Factual Accuracy**: Are the species name, threat description, and impact details actually mentioned in the abstract text?"
+        "\n   * `FAIL` if the subject contains species names NOT found in the abstract"
+        "\n   * `FAIL` if the object contains threat details NOT found in the abstract"
+        "\n   * `FAIL` if the predicate contains percentages, numbers, or specifics NOT found in the abstract"
+        "\n\n2. **Evidentiary Support**: Is the relationship an observed result or conclusion explicitly stated in the abstract?"
         "\n   * `FAIL` if it's only a hypothesis, a statement from the introduction, or not mentioned."
-        "\n\n2. **Subject Validity**: Is the `subject` a specific species or well-defined taxonomic group?"
+        "\n\n3. **Subject Validity**: Is the `subject` a specific species or well-defined taxonomic group?"
         "\n   * `FAIL` if the subject is an overly broad aggregated group when specific species were named in the abstract."
-        "\n\n3. **Threat Validity**: Is the `object` (the threat) conceptually sound?"
+        "\n\n4. **Threat Validity**: Is the `object` (the threat) conceptually sound?"
         "\n   * `FAIL` if it is a circular object (e.g., \"conservation status\"), an effect (e.g., \"mortality\"), or a simple ecological finding without measured harm (e.g., \"presence of parasites\")."
-        "\n\n4. **IUCN Category Consistency**: Does the assigned `IUCN label` correctly represent the threat's underlying driver according to standard classification rules? Pay special attention to whether the threat should be anthropogenic (IUCN 1-9) or natural (IUCN 10+)."
+        "\n\n5. **IUCN Category Consistency**: Does the assigned `IUCN label` correctly represent the threat's underlying driver according to standard classification rules? Pay special attention to whether the threat should be anthropogenic (IUCN 1-9) or natural (IUCN 10+)."
         "\n\n### **Decision and Output**"
         "\n\nBased on your review, provide a single, valid JSON object. Do not include any other text."
         "\n\n* The `decision` should be `\"KEEP\"` only if the triplet passes ALL checks. Otherwise, it should be `\"DROP\"`."
