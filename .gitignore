@@ -1,4 +1,5 @@
 .env 
+all_abstracts.parquet
 backend/data_with_embeddings.json
 webapp/backend/data_with_embeddings.json
 Lent_Init/runs/
@@ -9,18 +10,12 @@ __pycache__/
 *.pyc
 *.log
 .DS_Store
-
-# Python cache
 __pycache__/
 *.pyc
 *.pyo
-
-# Logs and temp files
 *.log
 .DS_Store
 *.tmp
-
-# Model files (if any)
 *.pkl
 *.bin
 *.pt

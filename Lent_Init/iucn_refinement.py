@@ -337,15 +337,30 @@ def cache_enriched_triples(triplets: List[Tuple[str, str, str, str]], llm_taxono
         'taxonomic_info': filtered_taxo_info
     }
     
-    with open(output_path / "enriched_triplets.json", "w", encoding='utf-8') as f:
+    target_file = output_path / "enriched_triplets.json"
+    tmp_file = output_path / "enriched_triplets.json.tmp"
+    with open(tmp_file, "w", encoding='utf-8') as f:
         json.dump(enriched_data, f, indent=2)
-    
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except Exception:
+            pass
+    os.replace(tmp_file, target_file)
     print("Enriched triplets saved to enriched_triplets.json")
 
     # separate file for taxonomies to inspect
     if filtered_taxo_info:
-        with open(output_path / "llm_wildlife_taxonomies.json", "w", encoding='utf-8') as f:
+        tax_target = output_path / "llm_wildlife_taxonomies.json"
+        tax_tmp = output_path / "llm_wildlife_taxonomies.json.tmp"
+        with open(tax_tmp, "w", encoding='utf-8') as f:
             json.dump(filtered_taxo_info, f, indent=2)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        os.replace(tax_tmp, tax_target)
         print("Wildlife taxonomies saved to llm_wildlife_taxonomies.json")
     else:
         print("No wildlife taxonomies to save")

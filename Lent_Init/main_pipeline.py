@@ -447,6 +447,7 @@ async def run_main_pipeline_logic(args):
     llm_setup['cache'] = Cache(cache_dir=str(cache_path))
     refinement_cache_dir = cache_path / "refinement_cache"
     refinement_cache = SimpleCache(refinement_cache_dir)
+    llm_setup['refinement_cache'] = refinement_cache
     
     taxonomic_filter = args.taxonomy if hasattr(args, 'taxonomy') and args.taxonomy else os.getenv('TAXONOMY_FILTER', '')
     VERIFICATION_THRESHOLD = 0.75
@@ -597,6 +598,12 @@ async def run_main_pipeline_logic(args):
                         if chunk_triplets:
                             intermediate_file = results_path / f"intermediate_triplets_{processed_count}.json"
                             cache_enriched_triples(chunk_triplets, chunk_taxo, results_path)
+                            try:
+                                import shutil
+                                shutil.copy(results_path / "enriched_triplets.json", intermediate_file)
+                                logger.info(f"SAVED intermediate snapshot: {intermediate_file.name}")
+                            except Exception as e_copy:
+                                logger.warning(f"Failed to save intermediate snapshot {intermediate_file.name}: {e_copy}")
                             logger.info(f"SAVED intermediate results: {len(chunk_triplets)} triplets to {intermediate_file.parent}/enriched_triplets.json")                        
                         should_backfill = (processed_count >= max_limit)
                         
