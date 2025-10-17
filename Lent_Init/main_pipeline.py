@@ -250,7 +250,8 @@ async def check_relevance_batch_optimized(batch_items, llm_setup, embed_model, e
     if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
         logger.info(f"Using batch embeddings classification for {len(batch_items)} abstracts")
         abstracts_for_ml = [item['abstract'] for item in batch_items]
-        batch_results = await predict_relevance_embeddings_batch(abstracts_for_ml, embed_model, embed_classifier, threshold=0.70)
+        refinement_cache = llm_setup.get('refinement_cache')
+        batch_results = await predict_relevance_embeddings_batch(abstracts_for_ml, embed_model, embed_classifier, threshold=0.60, cache=refinement_cache)
         
         results = []
         for i, (item, (is_relevant, score)) in enumerate(zip(batch_items, batch_results)):
@@ -471,7 +472,8 @@ async def run_main_pipeline_logic(args):
         # try embedding classifier first
         if embed_classifier and embed_model and EMBEDDINGS_AVAILABLE:
             logger.debug(f"Using embedding classifier for '{title[:30]}...'")
-            is_relevant = predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.70)
+            refinement_cache = llm_setup.get('refinement_cache')
+            is_relevant = predict_relevance_embeddings(abstract, embed_model, embed_classifier, threshold=0.60, cache=refinement_cache)
             # Get the actual probability score for logging
             probabilities = embed_classifier.predict_proba(embed_model.encode([abstract]))[0]
             relevance_score = probabilities[1]

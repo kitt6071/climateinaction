@@ -142,11 +142,16 @@ def setup_embedding_classifier(models_path: Path):
     
     return model, classifier
 
-def predict_relevance_embeddings(abstract_text: str, model, classifier, threshold: float = 0.4) -> bool:
-    """Predict relevance using embeddings and trained classifier with optimized threshold."""
+def predict_relevance_embeddings(abstract_text: str, model, classifier, threshold: float = 0.6, cache=None) -> bool:
     if not model or not classifier:
         logger.warning("Embedding classifier components not available")
         return False
+    
+    if cache:
+        cache_key = f"relevance_embeddings:{hashlib.md5(abstract_text.encode()).hexdigest()}:{threshold}"
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
         
     try:
         embedding = model.encode([abstract_text])
@@ -157,23 +162,52 @@ def predict_relevance_embeddings(abstract_text: str, model, classifier, threshol
         
         if relevance_score > 0.3:  # Log potential wildlife papers
             logger.info(f"Embedding classifier: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
+        if cache:
+            cache.set(cache_key, bool(is_relevant))
+        
         return bool(is_relevant)
     except Exception as e:
         logger.error(f"Error in embedding relevance prediction: {e}")
         return False
 
-async def predict_relevance_embeddings_batch(abstract_texts: List[str], model, classifier, threshold: float = 0.4) -> List[Tuple[bool, float]]:
+async def predict_relevance_embeddings_batch(abstract_texts: List[str], model, classifier, threshold: float = 0.6, cache=None) -> List[Tuple[bool, float]]:
     if not model or not classifier:
         logger.warning("Embedding classifier components not available")
         return [(False, 0.0)] * len(abstract_texts)
         
     if not abstract_texts:
         return []
+    
+    # Check cache for all abstracts
+    results = []
+    uncached_indices = []
+    uncached_texts = []
+    
+    for i, text in enumerate(abstract_texts):
+        if cache:
+            cache_key = f"relevance_embeddings:{hashlib.md5(text.encode()).hexdigest()}:{threshold}"
+            cached_result = cache.get(cache_key)
+            if cached_result is not None:
+                # Get the score from cache or use default
+                cached_score_key = f"relevance_embeddings_score:{hashlib.md5(text.encode()).hexdigest()}"
+                cached_score = cache.get(cached_score_key)
+                if cached_score is None:
+                    cached_score = 1.0 if cached_result else 0.0
+                results.append((cached_result, cached_score))
+                continue
+        
+        uncached_indices.append(i)
+        uncached_texts.append(text)
+        results.append(None)
+    
+    if not uncached_texts:
+        # All results were cached
+        return results
         
     try:
         loop = asyncio.get_running_loop()
         
-        encode_fn = functools.partial(model.encode, abstract_texts, show_progress_bar=False)
+        encode_fn = functools.partial(model.encode, uncached_texts, show_progress_bar=False)
         embeddings = await loop.run_in_executor(executor, encode_fn)
         
         predict_fn = functools.partial(classifier.predict_proba, embeddings)
@@ -182,16 +216,29 @@ async def predict_relevance_embeddings_batch(abstract_texts: List[str], model, c
         relevance_scores = probabilities[:, 1]
         is_relevant_batch = relevance_scores >= threshold
         
-        results = []
-        for i, (is_relevant, relevance_score) in enumerate(zip(is_relevant_batch, relevance_scores)):
+        for idx, (is_relevant, relevance_score) in enumerate(zip(is_relevant_batch, relevance_scores)):
+            original_idx = uncached_indices[idx]
             if relevance_score > 0.3:
-                logger.info(f"Embedding classifier batch[{i}]: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
-            results.append((bool(is_relevant), float(relevance_score)))
+                logger.info(f"Embedding classifier batch[{original_idx}]: score={relevance_score:.3f}, threshold={threshold}, prediction={is_relevant}")
+            result = (bool(is_relevant), float(relevance_score))
+            results[original_idx] = result
+            
+            # Cache the result
+            if cache:
+                text = uncached_texts[idx]
+                cache_key = f"relevance_embeddings:{hashlib.md5(text.encode()).hexdigest()}:{threshold}"
+                cache.set(cache_key, bool(is_relevant))
+                # Also cache the score
+                score_key = f"relevance_embeddings_score:{hashlib.md5(text.encode()).hexdigest()}"
+                cache.set(score_key, float(relevance_score))
         
         return results
     except Exception as e:
         logger.error(f"Error in batch embedding relevance prediction: {e}")
-        return [(False, 0.0)] * len(abstract_texts)
+        for i in uncached_indices:
+            if results[i] is None:
+                results[i] = (False, 0.0)
+        return results
 
 if __name__ == "__main__":
     from .main_pipeline import run_main_pipeline_logic, run_batch_enabled_pipeline, run_wikispecies_verification_logic, run_taxonomy_comparison_logic
