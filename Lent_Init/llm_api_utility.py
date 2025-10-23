@@ -252,7 +252,7 @@ def extract_content_from_result(result):
         return str(result) if result else ""
 
 
-async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=180, format=None, llm_setup=None, logprobs=False, top_logprobs=None, max_retries=3, extra_body=None):
+async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=180, format=None, llm_setup=None, logprobs=False, top_logprobs=None, max_retries=5, extra_body=None):
     for attempt in range(max_retries):
         try:
             logger.info(f"Attempt {attempt + 1}/{max_retries} for model {model}")
@@ -301,7 +301,7 @@ async def llm_generate_with_retry(prompt, system, model, temp=0.1, timeout=180, 
             logger.error(f"Attempt {attempt + 1} failed: {e}")
             
         if attempt < max_retries - 1:
-            wait_time = 2 ** attempt  # Exponential backoff
+            wait_time = min(2 ** attempt, 60)  # Exponential backoff, capped at 60s
             logger.info(f"Waiting {wait_time}s before retry...")
             await asyncio.sleep(wait_time)
     

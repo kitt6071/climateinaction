@@ -290,7 +290,7 @@ async def process_relevance_parallel_batches(batch_items, llm_setup, model_pool,
         return []
     
     RELEVANCE_BATCH_SIZE = 500
-    MAX_RELEVANCE_WORKERS = 20
+    MAX_RELEVANCE_WORKERS = 5  # Reduced to avoid rate limits
     
     import itertools
     model_cycle = itertools.cycle(model_pool)
@@ -397,7 +397,7 @@ async def run_main_pipeline_logic(args):
             logger.info("Creating reusable model pool for parallel processing")
             try:
                 from sentence_transformers import SentenceTransformer
-                pool_size = 10
+                pool_size = 3  # Reduced to avoid rate limits
                 model_pool.append((embed_model, embed_classifier))
                 
                 for i in range(pool_size - 1):

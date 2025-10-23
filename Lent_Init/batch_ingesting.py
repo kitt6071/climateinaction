@@ -15,11 +15,11 @@ from concurrent.futures import ThreadPoolExecutor
 from .setup import setup_llm
 
 BATCH_CONFIG = {
-    'summary_batch_size': 100,
-    'triplet_batch_size': 75,
-    'max_summary_workers': 200,
-    'max_triplet_workers': 150,
-    'max_enrichment_workers': 100,
+    'summary_batch_size': 10,
+    'triplet_batch_size': 15,
+    'max_summary_workers': 20,
+    'max_triplet_workers': 15,
+    'max_enrichment_workers': 10,
     'enable_batch_processing': True,
     'processing_batch_size': 500
 }
@@ -33,11 +33,9 @@ except ImportError:
     print("Warning: sentence-transformers not available")
     EMBEDDINGS_AVAILABLE = False
 
-# Create a single thread pool executor for the entire application
 executor = ThreadPoolExecutor()
 
 def load_classifier_components(vectorizer_path: Path, classifier_path: Path):
-    """Load classifier TF-IDF vectorizer and relevance classifier from files"""
     vectorizer = None
     classifier = None
     
