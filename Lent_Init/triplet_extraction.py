@@ -75,7 +75,7 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
 # Extract entities (species & threats) from abstract in single call
 async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Optional[Dict[str, List[str]]]:
     import hashlib    
-    cache = llm_setup.get('cache')
+    cache = llm_setup.get('refinement_cache')
     if cache:
         cache_key = f"entity_extraction:{hashlib.md5(abstract_text.encode('utf-8', errors='replace')).hexdigest()}"
         cached_result = cache.get(cache_key)
@@ -246,7 +246,7 @@ Do not add any text or markdown before or after the JSON object.
 async def generate_relationships_concurrently(abstract_text: str, species_list: List[str], threats_list: List[str], llm_setup, doi: str) -> List[Tuple[str, str, str, str, str]]:
     import hashlib
     
-    cache = llm_setup.get('cache')
+    cache = llm_setup.get('refinement_cache')
     if cache:
         cache_input = f"{abstract_text}|{sorted(species_list)}|{sorted(threats_list)}"
         cache_key = f"relationships:{hashlib.md5(cache_input.encode('utf-8', errors='replace')).hexdigest()}"
