@@ -74,6 +74,15 @@ async def convert_to_summary(abstract: str, llm_setup) -> str:
 
 # Extract entities (species & threats) from abstract in single call
 async def extract_entities_concurrently(abstract_text: str, llm_setup) -> Optional[Dict[str, List[str]]]:
+    import hashlib    
+    cache = llm_setup.get('cache')
+    if cache:
+        cache_key = f"entity_extraction:{hashlib.md5(abstract_text.encode('utf-8', errors='replace')).hexdigest()}"
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Entity extraction cache hit for abstract: {abstract_text[:50]}...")
+            return cached_result
+    
     model_name = llm_setup.get("model", "unknown")
     logger.info(f"P2.1: Extracting entities using model {model_name} for abstract: {abstract_text[:50]}...")
     
@@ -197,6 +206,9 @@ Do not add any text or markdown before or after the JSON object.
                 reasoning = entities_data.get("reasoning", "No reasoning provided")
                 logger.info(f"P2.1: Successfully extracted {len(entities_data['species'])} species, {len(entities_data['threats'])} threats, {len(entities_data['evidence_sentences'])} evidence sentences.")
                 logger.info(f"P2.1: Reasoning: {reasoning}")
+                if cache:
+                    cache.set(cache_key, entities_data)
+                
                 return entities_data
             else:
                 logger.error(f"P2.1: Extracted lists contain non-string elements")
@@ -212,6 +224,9 @@ Do not add any text or markdown before or after the JSON object.
                 reasoning = actual_data.get("reasoning", "No reasoning provided")
                 logger.info(f"P2.1: Successfully extracted {len(actual_data['species'])} species, {len(actual_data['threats'])} threats, {len(actual_data['evidence_sentences'])} evidence sentences (from 'value' key).")
                 logger.info(f"P2.1: Reasoning: {reasoning}")
+                if cache:
+                    cache.set(cache_key, actual_data)
+                
                 return actual_data
             else:
                 logger.error(f"P2.1: Unexpected structure in 'value' key")
@@ -229,6 +244,17 @@ Do not add any text or markdown before or after the JSON object.
 
 #Impact relationship extraction
 async def generate_relationships_concurrently(abstract_text: str, species_list: List[str], threats_list: List[str], llm_setup, doi: str) -> List[Tuple[str, str, str, str, str]]:
+    import hashlib
+    
+    cache = llm_setup.get('cache')
+    if cache:
+        cache_input = f"{abstract_text}|{sorted(species_list)}|{sorted(threats_list)}"
+        cache_key = f"relationships:{hashlib.md5(cache_input.encode('utf-8', errors='replace')).hexdigest()}"
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Relationship generation cache hit for DOI: {doi}")
+            return cached_result
+    
     model_name = llm_setup.get("model", "unknown")
     logger.info(f"P2.2: Generating relationships using model {model_name} for DOI: {doi}, {len(species_list)} species, {len(threats_list)} threats")
     
@@ -421,7 +447,10 @@ Output as a JSON array of objects. Do not include any explanatory text outside t
         else:
             logger.error(f"P2.2: Unexpected JSON structure for relationships. Expected list or dict with 'value'. Got {type(relationships_data)}. Raw: '{response_str}'. DOI: {doi}")
     except Exception as e:
-        logger.error(f"P2.2: Error in generate_relationships_concurrently for DOI {doi}: {e}", exc_info=True)
+        logger.error(f"P2.2: Error in generate_relationships_concurrently for DOI {doi}: {e}", exc_info=True)    
+    if raw_triplets and cache:
+        cache.set(cache_key, raw_triplets)
+    
     return raw_triplets
 
 

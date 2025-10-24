@@ -1160,6 +1160,7 @@ async def process_abstract_chunk(
             cache_key = f"iucn_classify_json_schema:{final_desc}|context:{s}|{p}|abstract:{bool(abstract_text)}"
             cached = refinement_cache.get(cache_key)
             if cached:
+                logger.info(f"IUCN cache hit (main pipeline): '{final_desc[:50]}...'")
                 cached_code, cached_name = cached
                 refined_o = f"{final_desc} [IUCN: {cached_code} {cached_name}]"
                 post_pre_enriched[idx] = (s, p, refined_o, d, evidence)
