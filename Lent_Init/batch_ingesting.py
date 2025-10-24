@@ -15,11 +15,11 @@ from concurrent.futures import ThreadPoolExecutor
 from .setup import setup_llm
 
 BATCH_CONFIG = {
-    'summary_batch_size': 10,
-    'triplet_batch_size': 15,
-    'max_summary_workers': 20,
-    'max_triplet_workers': 15,
-    'max_enrichment_workers': 10,
+    'summary_batch_size': 5,
+    'triplet_batch_size': 7,
+    'max_summary_workers': 10,
+    'max_triplet_workers': 7,
+    'max_enrichment_workers': 5,
     'enable_batch_processing': True,
     'processing_batch_size': 500
 }
