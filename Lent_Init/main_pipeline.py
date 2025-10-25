@@ -103,6 +103,15 @@ def has_shorebird_keywords(text):
 
 async def check_for_primary_evidence(abstract: str, llm_setup: dict) -> dict:
     import json
+    import hashlib
+    
+    cache = llm_setup.get('refinement_cache')
+    if cache:
+        cache_key = f"primary_evidence:{hashlib.md5(abstract.encode('utf-8', errors='replace')).hexdigest()}"
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Primary evidence gate cache hit")
+            return cached_result
     
     gate_schema = {
         "type": "object",
@@ -153,6 +162,9 @@ Schema:
         if response:
             try:
                 evidence_data = json.loads(response)
+                if cache:
+                    cache.set(cache_key, evidence_data)
+                
                 return evidence_data
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse evidence gate JSON response: {response[:100]}")
@@ -166,6 +178,15 @@ Schema:
 
 async def check_for_impact_conservation_evidence(abstract: str, llm_setup: dict) -> dict:
     import json
+    import hashlib
+    
+    cache = llm_setup.get('refinement_cache')
+    if cache:
+        cache_key = f"impact_conservation:{hashlib.md5(abstract.encode('utf-8', errors='replace')).hexdigest()}"
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Impact/conservation gate cache hit")
+            return cached_result
     
     gate_schema = {
         "type": "object",
@@ -230,6 +251,9 @@ Schema:
         if response:
             try:
                 evidence_data = json.loads(response)
+                if cache:
+                    cache.set(cache_key, evidence_data)
+                
                 return evidence_data
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse impact gate JSON response: {response[:100]}")
