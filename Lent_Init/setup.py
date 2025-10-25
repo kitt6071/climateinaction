@@ -132,7 +132,7 @@ def setup_llm():
     return {
         'cache': Cache(),
         'model': "moonshotai/kimi-k2",
-        'api_rate_limiter': RateLimiter(rpm=30, ollama_mode=False),
+        'api_rate_limiter': RateLimiter(rpm=10, ollama_mode=False),
         'species_model': "moonshotai/kimi-k2",  # NER
         'threat_model': "moonshotai/kimi-k2",   # NER
         'impact_model': "deepseek/deepseek-r1-0528",  # REASONING
