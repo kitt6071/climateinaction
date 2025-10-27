@@ -1191,22 +1191,41 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
                 Perform a quality control check on this triplet using the review checklist. Evaluate evidentiary support, subject validity, threat validity, and provide your decision with any issues identified."""
                         
         response_str = None
+        
+        max_attempts = 5
+        base_delay = 8.0
+        
+        for attempt in range(1, max_attempts + 1):
+            try:
+                verification_model = p_llm_setup.get("model", "qwen/qwen3-235b-a22b")
+                if attempt == 1:
+                    logger.info(f"{verification_model} for verification with logprobs")
+                
+                response_result = await llm_generate_with_retry(
+                    prompt=prompt, 
+                    system=p_system_prompt, 
+                    model=verification_model,
+                    temp=0.0, 
+                    format=p_verification_schema, 
+                    llm_setup=p_llm_setup,
+                    logprobs=True,
+                    top_logprobs=5,
+                    max_retries=1,
+                )                
+                break
+                
+            except Exception as e:
+                if attempt < max_attempts:
+                    delay = base_delay * (2 ** (attempt - 1))
+                    logger.warning(f"Verification attempt {attempt}/{max_attempts} failed for {subject}|{predicate}|{obj}: {str(e)[:100]}")
+                    logger.warning(f"  Waiting {delay}s before retry...")
+                    await asyncio.sleep(delay)
+                else:
+                    # Final attempt failed
+                    logger.error(f"VERIFICATION ERROR - All {max_attempts} attempts failed for {subject}|{predicate}|{obj}")
+                    return (subject, predicate, obj, doi_val, evidence), f"ERROR_MAX_RETRIES: {str(e)[:50]}", 0.0
+        
         try:
-            verification_model = p_llm_setup.get("model", "qwen/qwen3-235b-a22b")
-            logger.info(f"{verification_model} for verification with logprobs")
-            
-            response_result = await llm_generate_with_retry(
-                prompt=prompt, 
-                system=p_system_prompt, 
-                model=verification_model,
-                temp=0.0, 
-                format=p_verification_schema, 
-                llm_setup=p_llm_setup,
-                logprobs=True,
-                top_logprobs=5,
-                max_retries=2,
-                #extra_body={"require_parameters": True}
-            )
             
             if isinstance(response_result, tuple):
                 if len(response_result) == 3:

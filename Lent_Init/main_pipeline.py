@@ -1100,8 +1100,17 @@ async def process_abstract_chunk(
             logger.warning(f"No abstract for DOI {doi}, skipping {len(triplets_for_doi)} triplets")
 
     if verify_tasks:
-        logger.info(f"Running verification for {len(verify_tasks)} abstracts")
-        verify_results = await asyncio.gather(*verify_tasks, return_exceptions=True)
+        max_concurrent_verification_batches = 2
+        verification_semaphore = asyncio.Semaphore(max_concurrent_verification_batches)
+        
+        async def verify_with_limit(task):
+            async with verification_semaphore:
+                return await task
+        
+        limited_tasks = [verify_with_limit(task) for task in verify_tasks]
+        
+        logger.info(f"Running verification for {len(verify_tasks)} abstracts (max {max_concurrent_verification_batches} batches concurrent)")
+        verify_results = await asyncio.gather(*limited_tasks, return_exceptions=True)
         logger.info("Verification done")
         
         dois_list = list(triplets_by_doi.keys())
