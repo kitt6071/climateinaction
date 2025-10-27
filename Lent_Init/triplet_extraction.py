@@ -1154,6 +1154,18 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
                 cached_triplets_list, cached_counts_dict = cached_data
                 if isinstance(cached_triplets_list, list) and isinstance(cached_counts_dict, dict):
                     logger.info(f"cache hit for {abstract_hash_part}")
+                    submitted = cached_counts_dict.get('submitted', 0)
+                    verified_yes = cached_counts_dict.get('verified_yes', 0)
+                    verified_no = cached_counts_dict.get('verified_no', 0)
+                    errors = cached_counts_dict.get('errors', 0)
+                    
+                    if errors > 0:
+                        logger.warning(f"CACHED VERIFICATION had {errors} ERRORS out of {submitted} triplets (yes: {verified_yes}, no: {verified_no})")
+                        logger.warning(f"  These errors occurred in a previous run. To see detailed error logs, clear the cache and re-run.")
+                        logger.warning(f"  Error rate: {errors/submitted*100:.1f}% of triplets failed with errors")
+                    else:
+                        logger.debug(f"CACHED VERIFICATION: {submitted} submitted, {verified_yes} verified, {verified_no} rejected, {errors} errors")
+                    
                     return cached_triplets_list, cached_counts_dict
         except Exception as e:
             logger.warning(f"cache read failed: {e}")
