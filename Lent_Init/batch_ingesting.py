@@ -21,7 +21,7 @@ BATCH_CONFIG = {
     'max_triplet_workers': 7,
     'max_enrichment_workers': 5,
     'enable_batch_processing': True,
-    'processing_batch_size': 500
+    'processing_batch_size': 200
 }
 
 logger = logging.getLogger("pipeline")

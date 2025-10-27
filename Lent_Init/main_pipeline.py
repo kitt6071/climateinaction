@@ -678,7 +678,7 @@ async def run_main_pipeline_logic(args):
                                 
                                 logger.info(f"Found {len(backfill_candidates)} candidates from the initial batch. Scanning for more.")
                                 
-                                target_relevant_to_find = max_limit
+                                target_relevant_to_find = min(needed_replacements + 50, 200)
                                 backfill_batch_size = 2000
                                 
                                 while len(backfill_candidates) < target_relevant_to_find:
