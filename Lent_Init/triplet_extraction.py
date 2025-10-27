@@ -1214,6 +1214,7 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
                 logger.debug(f"Received response without logprobs for triplet: {subject}|{predicate}|{obj}")
             
             if not response_str:
+                logger.error(f"VERIFICATION ERROR - Empty response from LLM for triplet: {subject}|{predicate}|{obj}")
                 return (subject, predicate, obj, doi_val, evidence), "ERROR_EMPTY_RESPONSE", 0.0
 
             clean_response = response_str.strip()
@@ -1304,14 +1305,15 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
                     logger.info(f"REJECT: {subject} | {predicate} | {obj} (conf: {log_prob_confidence:.3f}) | Issues: {issues_str}")
                 return (subject, predicate, obj, doi_val, evidence), decision, log_prob_confidence
             else:
-                logger.error(f"Invalid verification decision type: {type(verification_decision)} for triplet: {subject}|{predicate}|{obj}")
+                logger.error(f"VERIFICATION ERROR - Invalid decision type: {type(verification_decision)} for triplet: {subject}|{predicate}|{obj}. Decision: {verification_decision}")
                 return (subject, predicate, obj, doi_val, evidence), "ERROR_INVALID_JSON_CONTENT", 0.0
         
-        except json.JSONDecodeError:
-            logger.error(f"JSONDecodeError for triplet: {subject}|{predicate}|{obj}. Response: {response_str}")
+        except json.JSONDecodeError as json_err:
+            logger.error(f"VERIFICATION ERROR - JSONDecodeError for triplet: {subject}|{predicate}|{obj}")
+            logger.error(f"  Response was: {response_str[:200]}...")
             return (subject, predicate, obj, doi_val, evidence), "ERROR_JSON_DECODE", 0.0
         except Exception as e:
-            logger.error(f"Exception in verify_single_triplet_task for {subject}|{predicate}|{obj}: {e}")
+            logger.error(f"VERIFICATION ERROR - Exception for {subject}|{predicate}|{obj}: {type(e).__name__}: {str(e)}")
             return (subject, predicate, obj, doi_val, evidence), f"ERROR_LLM_CALL: {str(e)[:50]}", 0.0
 
     tasks = []
@@ -1342,7 +1344,8 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
 
         if "ERROR" in decision:
             counts['errors'] += 1
-            logger.warning(f"rejected: {subject} | {predicate} | {obj}")
+            logger.error(f"VERIFICATION ERROR - Triplet rejected due to error: {subject} | {predicate} | {obj}")
+            logger.error(f"  Error type: {decision}")
         elif decision == "KEEP":
             # Handle both log probability and regular confidence thresholds
             if confidence < 0:  # Log probability (negative values, closer to 0 = higher confidence)
