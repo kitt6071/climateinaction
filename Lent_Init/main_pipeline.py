@@ -1203,18 +1203,22 @@ async def process_abstract_chunk(
             refined_o = f"{final_desc} [IUCN: {code} {name}]"
             post_pre_enriched[idx] = (s, p, refined_o, d, evidence)
 
-    use_hierarchical = os.getenv('USE_HIERARCHICAL_IUCN', 'false').lower() == 'true'
-    logger.info(f"IUCN classification mode: {'Hierarchical' if use_hierarchical else 'Original'}")
+    use_hierarchical = os.getenv('USE_HIERARCHICAL_IUCN', 'true').lower() == 'true'
+    logger.info(f"IUCN classification mode: {'Hierarchical (Two-Tier)' if use_hierarchical else 'Original'}")
     
-    post_iucn_tasks = [
-        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5], use_hierarchical=use_hierarchical)
-        for item in post_iucn_items
-    ]
+    max_concurrent_iucn = 3
+    iucn_semaphore = asyncio.Semaphore(max_concurrent_iucn)
+    
+    async def iucn_with_limit(item):
+        async with iucn_semaphore:
+            return await get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5], use_hierarchical=use_hierarchical)
+    
+    post_iucn_tasks = [iucn_with_limit(item) for item in post_iucn_items]
 
     final_triplets: List[Tuple[str, str, str, str]] = [None] * len(normalized_triplets)  # type: ignore
 
     if post_iucn_tasks:
-        logger.info(f"IUCN classification for {len(post_iucn_tasks)} items (post-filter)")
+        logger.info(f"IUCN classification for {len(post_iucn_tasks)} items (max {max_concurrent_iucn} concurrent)")
         post_iucn_results = await asyncio.gather(*post_iucn_tasks)
         logger.info("IUCN classification done (post-filter)")
         for i, (code, name) in enumerate(post_iucn_results):

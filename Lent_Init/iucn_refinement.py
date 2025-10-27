@@ -769,16 +769,34 @@ async def get_coarse_iucn_classification( subject: str, predicate: str, threat_d
 
         Focus on the IMMEDIATE THREAT, not symptoms like "mortality", "decline", or "reduced breeding success"."""
 
-    response_result = await llm_generate(
-        prompt=prompt,
-        system=system_prompt,
-        model=llm_setup.get("model", "moonshotai/kimi-k2"),
-        temp=0.1,
-        format=coarse_schema,
-        llm_setup=llm_setup,
-        logprobs=True,
-        top_logprobs=5
-    )
+    max_attempts = 5
+    base_delay = 8.0
+    response_result = None
+    logprobs_info = None
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response_result = await llm_generate(
+                prompt=prompt,
+                system=system_prompt,
+                model=llm_setup.get("model", "moonshotai/kimi-k2"),
+                temp=0.1,
+                format=coarse_schema,
+                llm_setup=llm_setup,
+                logprobs=True,
+                top_logprobs=5
+            )
+            break
+            
+        except Exception as e:
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning(f"Coarse IUCN attempt {attempt}/{max_attempts} failed for '{threat_desc[:50]}...': {str(e)[:100]}")
+                logger.warning(f"  Waiting {delay}s before retry...")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"COARSE IUCN ERROR - All {max_attempts} attempts failed for '{threat_desc[:50]}...'")
+                raise
 
     if isinstance(response_result, tuple) and len(response_result) >= 2:
         response_str, logprobs_info = response_result[0], response_result[1]
@@ -947,17 +965,34 @@ async def get_fine_iucn_classification( coarse_category: str, subject: str, pred
         4. Provide confidence level in your classification
 
         Be precise - choose the most specific code that is directly supported by the evidence."""
+    
+    max_attempts = 5
+    base_delay = 8.0
+    response_result = None
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response_result = await llm_generate(
+                prompt=prompt,
+                system=system_prompt,
+                model=llm_setup.get("model", "moonshotai/kimi-k2"),
+                temp=0.0,
+                format=fine_schema,
+                llm_setup=llm_setup,
+                logprobs=True,
+                top_logprobs=5
+            )
+            break
             
-    response_result = await llm_generate(
-        prompt=prompt,
-        system=system_prompt,
-        model=llm_setup.get("model", "moonshotai/kimi-k2"),
-        temp=0.0,
-        format=fine_schema,
-        llm_setup=llm_setup,
-        logprobs=True,
-        top_logprobs=5
-    )
+        except Exception as e:
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning(f"Fine IUCN attempt {attempt}/{max_attempts} failed for category {coarse_category} '{threat_desc[:50]}...': {str(e)[:100]}")
+                logger.warning(f"  Waiting {delay}s before retry...")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"FINE IUCN ERROR - All {max_attempts} attempts failed for category {coarse_category} '{threat_desc[:50]}...'")
+                raise
 
     response_str = extract_content_from_result(response_result)
     if response_str:
