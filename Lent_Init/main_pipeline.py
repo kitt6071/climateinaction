@@ -1100,17 +1100,8 @@ async def process_abstract_chunk(
             logger.warning(f"No abstract for DOI {doi}, skipping {len(triplets_for_doi)} triplets")
 
     if verify_tasks:
-        max_concurrent_verification_batches = 2
-        verification_semaphore = asyncio.Semaphore(max_concurrent_verification_batches)
-        
-        async def verify_with_limit(task):
-            async with verification_semaphore:
-                return await task
-        
-        limited_tasks = [verify_with_limit(task) for task in verify_tasks]
-        
-        logger.info(f"Running verification for {len(verify_tasks)} abstracts (max {max_concurrent_verification_batches} batches concurrent)")
-        verify_results = await asyncio.gather(*limited_tasks, return_exceptions=True)
+        logger.info(f"Running verification for {len(verify_tasks)} abstracts (using gpt-4o-mini with fallback)")
+        verify_results = await asyncio.gather(*verify_tasks, return_exceptions=True)
         logger.info("Verification done")
         
         dois_list = list(triplets_by_doi.keys())
@@ -1206,19 +1197,15 @@ async def process_abstract_chunk(
     use_hierarchical = os.getenv('USE_HIERARCHICAL_IUCN', 'true').lower() == 'true'
     logger.info(f"IUCN classification mode: {'Hierarchical (Two-Tier)' if use_hierarchical else 'Original'}")
     
-    max_concurrent_iucn = 3
-    iucn_semaphore = asyncio.Semaphore(max_concurrent_iucn)
-    
-    async def iucn_with_limit(item):
-        async with iucn_semaphore:
-            return await get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5], use_hierarchical=use_hierarchical)
-    
-    post_iucn_tasks = [iucn_with_limit(item) for item in post_iucn_items]
+    post_iucn_tasks = [
+        get_iucn_classification_json(item[0], item[1], item[2], llm_setup, refinement_cache, item[5], use_hierarchical=use_hierarchical)
+        for item in post_iucn_items
+    ]
 
     final_triplets: List[Tuple[str, str, str, str]] = [None] * len(normalized_triplets)  # type: ignore
 
     if post_iucn_tasks:
-        logger.info(f"IUCN classification for {len(post_iucn_tasks)} items (max {max_concurrent_iucn} concurrent)")
+        logger.info(f"IUCN classification for {len(post_iucn_tasks)} items (using gpt-4o-mini with fallback)")
         post_iucn_results = await asyncio.gather(*post_iucn_tasks)
         logger.info("IUCN classification done (post-filter)")
         for i, (code, name) in enumerate(post_iucn_results):

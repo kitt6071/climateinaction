@@ -11,8 +11,6 @@ from .llm_api_utility import llm_generate, extract_content_from_result, strip_ma
 
 logger = logging.getLogger("pipeline")
 
-iucn_call_semaphore = asyncio.Semaphore(2)
-
 async def get_iucn_classification_json(subject: str, predicate: str, threat_desc: str, llm_setup, cache: SimpleCache, abstract: Optional[str] = None, use_hierarchical: bool = False) -> tuple[str, str]: 
     if use_hierarchical:
         return await get_hierarchical_iucn_classification(subject, predicate, threat_desc, llm_setup, cache, abstract)
@@ -778,17 +776,25 @@ async def get_coarse_iucn_classification( subject: str, predicate: str, threat_d
     
     for attempt in range(1, max_attempts + 1):
         try:
-            async with iucn_call_semaphore:
-                response_result = await llm_generate(
-                    prompt=prompt,
-                    system=system_prompt,
-                    model=llm_setup.get("model", "moonshotai/kimi-k2"),
-                    temp=0.1,
-                    format=coarse_schema,
-                    llm_setup=llm_setup,
-                    logprobs=True,
-                    top_logprobs=5
-                )
+            if attempt == 1:
+                logger.info(f"Coarse IUCN classification using gpt-4o-mini with fallback")
+            
+            response_result = await llm_generate(
+                prompt=prompt,
+                system=system_prompt,
+                model="openai/gpt-4o-mini",
+                temp=0.1,
+                format=coarse_schema,
+                llm_setup=llm_setup,
+                extra_body={
+                    "models": [
+                        "openai/gpt-4o-mini",
+                        "openai/gpt-4o",
+                        "deepseek/deepseek-chat-v3-0324"
+                    ],
+                    "route": "fallback"
+                }
+            )
             break
             
         except Exception as e:
@@ -975,17 +981,25 @@ async def get_fine_iucn_classification( coarse_category: str, subject: str, pred
     
     for attempt in range(1, max_attempts + 1):
         try:
-            async with iucn_call_semaphore:
-                response_result = await llm_generate(
-                    prompt=prompt,
-                    system=system_prompt,
-                    model=llm_setup.get("model", "moonshotai/kimi-k2"),
-                    temp=0.0,
-                    format=fine_schema,
-                    llm_setup=llm_setup,
-                    logprobs=True,
-                    top_logprobs=5
-                )
+            if attempt == 1:
+                logger.info(f"Fine IUCN classification (category {coarse_category}) using gpt-4o-mini with fallback")
+            
+            response_result = await llm_generate(
+                prompt=prompt,
+                system=system_prompt,
+                model="openai/gpt-4o-mini",
+                temp=0.0,
+                format=fine_schema,
+                llm_setup=llm_setup,
+                extra_body={
+                    "models": [
+                        "openai/gpt-4o-mini",
+                        "openai/gpt-4o",
+                        "deepseek/deepseek-chat-v3-0324"
+                    ],
+                    "route": "fallback"
+                }
+            )
             break
             
         except Exception as e:

@@ -1170,8 +1170,6 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
             logger.warning(f"cache read failed: {e}")
             if cache_file_path.exists(): cache_file_path.unlink(missing_ok=True)
 
-    verification_call_semaphore = asyncio.Semaphore(3)
-    
     async def verify_single_triplet_task(subject, predicate, obj, doi_val, evidence, p_llm_setup, p_system_prompt, p_verification_schema):
         evidence_section = ""
         if evidence:
@@ -1197,31 +1195,35 @@ async def verify_triplets(triplet_list: List[Tuple[str, str, str, str, str]], ab
         max_attempts = 5
         base_delay = 8.0
         
-        verification_model = p_llm_setup.get("model", "qwen/qwen3-235b-a22b")
+        verification_model = "openai/gpt-4o-mini"
         response_result = None
         for attempt in range(1, max_attempts + 1):
             try:
-                async with verification_call_semaphore:
-                    if attempt == 1:
-                        logger.info(f"{verification_model} for verification with logprobs")
-                    elif attempt > 1:
-                        logger.warning(f"Verification retry attempt {attempt}/{max_attempts} for {subject[:30]}|{predicate[:30]}|{obj[:30]}")
-                    
-                    response_result = await llm_generate_with_retry(
-                        prompt=prompt, 
-                        system=p_system_prompt, 
-                        model=verification_model,
-                        temp=0.0, 
-                        format=p_verification_schema, 
-                        llm_setup=p_llm_setup,
-                        logprobs=True,
-                        top_logprobs=5,
-                        max_retries=1,
-                    )
-                    
-                    if response_result is None or (isinstance(response_result, tuple) and not response_result[0]):
-                        raise Exception("Empty response from LLM (rate limited or server error)")
-                # If we got here, call succeeded
+                if attempt == 1:
+                    logger.info(f"Using {verification_model} for verification (with fallback routing)")
+                elif attempt > 1:
+                    logger.warning(f"Verification retry attempt {attempt}/{max_attempts} for {subject[:30]}|{predicate[:30]}|{obj[:30]}")
+                
+                response_result = await llm_generate_with_retry(
+                    prompt=prompt, 
+                    system=p_system_prompt, 
+                    model=verification_model,
+                    temp=0.0, 
+                    format=p_verification_schema, 
+                    llm_setup=p_llm_setup,
+                    max_retries=1,
+                    extra_body={
+                        "models": [
+                            "openai/gpt-4o-mini",
+                            "openai/gpt-4o", 
+                            "deepseek/deepseek-chat-v3-0324"
+                        ],
+                        "route": "fallback"
+                    }
+                )
+                
+                if response_result is None or (isinstance(response_result, tuple) and not response_result[0]):
+                    raise Exception("Empty response from LLM (rate limited or server error)")
                 break
                 
             except Exception as e:
