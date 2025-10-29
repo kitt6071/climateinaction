@@ -657,7 +657,7 @@ async def run_main_pipeline_logic(args):
                             
                             logger.info(f"Result: {len(successful_abstracts)} successful abstracts, {len(failed_abstracts)} failed abstracts")
                             
-                            max_backfill_attempts = 10
+                            max_backfill_attempts = 1000
                             backfill_attempt = 0
                             
                             while len(successful_abstracts) < target_successful_abstracts and backfill_attempt < max_backfill_attempts:
@@ -678,7 +678,7 @@ async def run_main_pipeline_logic(args):
                                 
                                 logger.info(f"Found {len(backfill_candidates)} candidates from the initial batch. Scanning for more.")
                                 
-                                target_relevant_to_find = min(needed_replacements + 50, 200)
+                                target_relevant_to_find = needed_replacements + 50
                                 backfill_batch_size = 2000
                                 
                                 while len(backfill_candidates) < target_relevant_to_find:
