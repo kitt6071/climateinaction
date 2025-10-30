@@ -733,13 +733,35 @@ async def run_main_pipeline_logic(args):
                                 logger.info(f"Backfill attempt #{backfill_attempt}: Found {len(backfill_candidates)} relevant abstracts to process")
                                 
                                 if backfill_candidates:
-                                    logger.info(f"Processing {len(backfill_candidates)} backfill candidates through full pipeline.")
+                                    logger.info(f"Clearing gate filter cache for {len(backfill_candidates)} backfill candidates")
+                                    for abstract_data in backfill_candidates:
+                                        abstract_text = abstract_data['abstract']
+                                        impact_cache_key = f"impact_conservation_gate:{abstract_text}"
+                                        refinement_cache.delete(impact_cache_key)
+                                        evidence_cache_key = f"primary_evidence_gate:{abstract_text}"
+                                        refinement_cache.delete(evidence_cache_key)
                                     
-                                    replacement_triplets, replacement_taxo = await process_abstract_chunk(
-                                        backfill_candidates,
-                                        llm_setup,
-                                        refinement_cache
-                                    )
+                                    logger.info(f"Processing {len(backfill_candidates)} backfill candidates in chunks of 200")
+                                    
+                                    backfill_chunk_size = 200
+                                    replacement_triplets = []
+                                    replacement_taxo = {}
+                                    
+                                    for chunk_start in range(0, len(backfill_candidates), backfill_chunk_size):
+                                        chunk_end = min(chunk_start + backfill_chunk_size, len(backfill_candidates))
+                                        backfill_chunk = backfill_candidates[chunk_start:chunk_end]
+                                        
+                                        logger.info(f"Processing backfill chunk {chunk_start//backfill_chunk_size + 1}/{(len(backfill_candidates)-1)//backfill_chunk_size + 1} ({len(backfill_chunk)} abstracts)")
+                                        
+                                        chunk_triplets_result, chunk_taxo_result = await process_abstract_chunk(
+                                            backfill_chunk,
+                                            llm_setup,
+                                            refinement_cache,
+                                            is_backfill=True
+                                        )
+                                        
+                                        replacement_triplets.extend(chunk_triplets_result)
+                                        replacement_taxo.update(chunk_taxo_result)
                                     
                                     replacement_triplets_by_doi = {}
                                     for triplet in replacement_triplets:
@@ -933,7 +955,8 @@ async def run_main_pipeline_logic(args):
 async def process_abstract_chunk(
     chunk: List[Dict], 
     llm_setup, 
-    refinement_cache
+    refinement_cache,
+    is_backfill: bool = False
 ) -> Tuple[List[Tuple[str, str, str, str]], Dict[str, Dict]]:
     logger.info(f"Processing chunk of {len(chunk)} abstracts")
     dois = [d.get('doi', 'N/A') for d in chunk]
