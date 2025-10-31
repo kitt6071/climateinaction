@@ -7,6 +7,7 @@ import asyncio
 import sys
 import logging
 import time
+import hashlib
 from .cache import Cache, SimpleCache
 from .setup import setup_pipeline_logging, get_dynamic_run_base_path, load_data_with_offset
 from .batch_ingesting import (BATCH_CONFIG, EMBEDDINGS_AVAILABLE, load_classifier_components,
@@ -692,8 +693,12 @@ async def run_main_pipeline_logic(args):
                                         
                                         for abstract_data in backfill_chunk:
                                             abstract_text = abstract_data['abstract']
-                                            refinement_cache.delete(f"impact_conservation_gate:{abstract_text}")
-                                            refinement_cache.delete(f"primary_evidence_gate:{abstract_text}")
+                                            impact_key = hashlib.md5(f"impact_conservation_gate:{abstract_text}".encode('utf-8')).hexdigest()
+                                            evidence_key = hashlib.md5(f"primary_evidence_gate:{abstract_text}".encode('utf-8')).hexdigest()
+                                            impact_cache_file = refinement_cache.cache_dir / f"{impact_key}.pkl"
+                                            evidence_cache_file = refinement_cache.cache_dir / f"{evidence_key}.pkl"
+                                            impact_cache_file.unlink(missing_ok=True)
+                                            evidence_cache_file.unlink(missing_ok=True)
                                         
                                         chunk_triplets_result, chunk_taxo_result = await process_abstract_chunk(
                                             backfill_chunk,
@@ -776,8 +781,12 @@ async def run_main_pipeline_logic(args):
                                                 
                                                 for abstract_data in backfill_chunk:
                                                     abstract_text = abstract_data['abstract']
-                                                    refinement_cache.delete(f"impact_conservation_gate:{abstract_text}")
-                                                    refinement_cache.delete(f"primary_evidence_gate:{abstract_text}")
+                                                    impact_key = hashlib.md5(f"impact_conservation_gate:{abstract_text}".encode('utf-8')).hexdigest()
+                                                    evidence_key = hashlib.md5(f"primary_evidence_gate:{abstract_text}".encode('utf-8')).hexdigest()
+                                                    impact_cache_file = refinement_cache.cache_dir / f"{impact_key}.pkl"
+                                                    evidence_cache_file = refinement_cache.cache_dir / f"{evidence_key}.pkl"
+                                                    impact_cache_file.unlink(missing_ok=True)
+                                                    evidence_cache_file.unlink(missing_ok=True)
                                                 
                                                 chunk_triplets_result, chunk_taxo_result = await process_abstract_chunk(
                                                     backfill_chunk,
