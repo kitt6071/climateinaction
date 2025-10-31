@@ -678,16 +678,59 @@ async def run_main_pipeline_logic(args):
                                 
                                 logger.info(f"Found {len(backfill_candidates)} candidates from the initial batch. Scanning for more.")
                                 
-                                target_relevant_to_find = needed_replacements + 50
-                                backfill_batch_size = 2000
+                                backfill_scan_batch_size = 2000
+                                backfill_process_chunk_size = 200
+                                new_successes = 0
+                                replacement_triplets = []
+                                replacement_taxo = {}
                                 
-                                while len(backfill_candidates) < target_relevant_to_find:
-                                    backfill_df = load_data_with_offset("all_abstracts.parquet", skip_rows, backfill_batch_size)
+                                if backfill_candidates:
+                                    logger.info(f"Processing {len(backfill_candidates)} candidates from initial batch")
+                                    for chunk_start in range(0, len(backfill_candidates), backfill_process_chunk_size):
+                                        chunk_end = min(chunk_start + backfill_process_chunk_size, len(backfill_candidates))
+                                        backfill_chunk = backfill_candidates[chunk_start:chunk_end]
+                                        
+                                        for abstract_data in backfill_chunk:
+                                            abstract_text = abstract_data['abstract']
+                                            refinement_cache.delete(f"impact_conservation_gate:{abstract_text}")
+                                            refinement_cache.delete(f"primary_evidence_gate:{abstract_text}")
+                                        
+                                        chunk_triplets_result, chunk_taxo_result = await process_abstract_chunk(
+                                            backfill_chunk,
+                                            llm_setup,
+                                            refinement_cache,
+                                            is_backfill=True
+                                        )
+                                        
+                                        replacement_triplets.extend(chunk_triplets_result)
+                                        replacement_taxo.update(chunk_taxo_result)
+                                        
+                                        for abstract in backfill_chunk:
+                                            doi = abstract['doi']
+                                            has_triplets = any(t[3] == doi for t in chunk_triplets_result)
+                                            if has_triplets:
+                                                successful_abstracts.append(abstract)
+                                                new_successes += 1
+                                            else:
+                                                failed_abstracts.append(abstract)
+                                        
+                                        chunk_triplets.extend(chunk_triplets_result)
+                                        chunk_taxo.update(chunk_taxo_result)
+                                        chunk.extend(backfill_chunk)
+                                        
+                                        logger.info(f"Backfill progress: {new_successes} new successes, total: {len(successful_abstracts)}/{target_successful_abstracts}")
+                                        
+                                        if len(successful_abstracts) >= target_successful_abstracts:
+                                            logger.info(f"Reached target of {target_successful_abstracts} successful abstracts!")
+                                            break
+                                
+                                while len(successful_abstracts) < target_successful_abstracts:
+                                    backfill_df = load_data_with_offset("all_abstracts.parquet", skip_rows, backfill_scan_batch_size)
                                     if len(backfill_df) == 0:
                                         logger.info("No more data available for backfill scanning.")
                                         break
                                     
-                                    logger.info(f"Backfill scanning batch of {len(backfill_df)} abstracts (found {len(backfill_candidates)}/{target_relevant_to_find} candidates so far)")
+                                    logger.info(f"Backfill scanning batch of {len(backfill_df)} abstracts (current successes: {len(successful_abstracts)}/{target_successful_abstracts})")
                                     
                                     backfill_scan_items = []
                                     keyword_filtered_count = 0
@@ -718,74 +761,63 @@ async def run_main_pipeline_logic(args):
                                             backfill_scan_items, llm_setup, model_pool, vectorizer, legacy_classifier
                                         )
                                         
+                                        # Collect relevant abstracts
+                                        batch_candidates = []
                                         for i, (is_relevant, relevance_score) in enumerate(backfill_results):
                                             if is_relevant:
-                                                backfill_candidates.append(backfill_scan_items[i])
-                                                if len(backfill_candidates) >= target_relevant_to_find:
+                                                batch_candidates.append(backfill_scan_items[i])
+                                        
+                                        logger.info(f"Found {len(batch_candidates)} relevant abstracts in this scan batch")
+                                        
+                                        if batch_candidates:
+                                            for chunk_start in range(0, len(batch_candidates), backfill_process_chunk_size):
+                                                chunk_end = min(chunk_start + backfill_process_chunk_size, len(batch_candidates))
+                                                backfill_chunk = batch_candidates[chunk_start:chunk_end]
+                                                
+                                                for abstract_data in backfill_chunk:
+                                                    abstract_text = abstract_data['abstract']
+                                                    refinement_cache.delete(f"impact_conservation_gate:{abstract_text}")
+                                                    refinement_cache.delete(f"primary_evidence_gate:{abstract_text}")
+                                                
+                                                chunk_triplets_result, chunk_taxo_result = await process_abstract_chunk(
+                                                    backfill_chunk,
+                                                    llm_setup,
+                                                    refinement_cache,
+                                                    is_backfill=True
+                                                )
+                                                
+                                                replacement_triplets.extend(chunk_triplets_result)
+                                                replacement_taxo.update(chunk_taxo_result)
+                                                
+                                                for abstract in backfill_chunk:
+                                                    doi = abstract['doi']
+                                                    has_triplets = any(t[3] == doi for t in chunk_triplets_result)
+                                                    if has_triplets:
+                                                        successful_abstracts.append(abstract)
+                                                        new_successes += 1
+                                                    else:
+                                                        failed_abstracts.append(abstract)
+                                                
+                                                chunk_triplets.extend(chunk_triplets_result)
+                                                chunk_taxo.update(chunk_taxo_result)
+                                                chunk.extend(backfill_chunk)
+                                                
+                                                logger.info(f"Backfill progress: {new_successes} new successes, total: {len(successful_abstracts)}/{target_successful_abstracts}")
+                                                
+                                                if len(successful_abstracts) >= target_successful_abstracts:
+                                                    logger.info(f"Reached target of {target_successful_abstracts} successful abstracts!")
                                                     break
+                                        
+                                        if len(successful_abstracts) >= target_successful_abstracts:
+                                            break
                                     
                                     skip_rows += len(backfill_df)
                                     total_scanned += len(backfill_df)
-                                    
-                                    if len(backfill_candidates) >= target_relevant_to_find:
-                                        break
-
-                                logger.info(f"Backfill attempt #{backfill_attempt}: Found {len(backfill_candidates)} relevant abstracts to process")
                                 
-                                if backfill_candidates:
-                                    logger.info(f"Clearing gate filter cache for {len(backfill_candidates)} backfill candidates")
-                                    for abstract_data in backfill_candidates:
-                                        abstract_text = abstract_data['abstract']
-                                        impact_cache_key = f"impact_conservation_gate:{abstract_text}"
-                                        refinement_cache.delete(impact_cache_key)
-                                        evidence_cache_key = f"primary_evidence_gate:{abstract_text}"
-                                        refinement_cache.delete(evidence_cache_key)
-                                    
-                                    logger.info(f"Processing {len(backfill_candidates)} backfill candidates in chunks of 200")
-                                    
-                                    backfill_chunk_size = 200
-                                    replacement_triplets = []
-                                    replacement_taxo = {}
-                                    
-                                    for chunk_start in range(0, len(backfill_candidates), backfill_chunk_size):
-                                        chunk_end = min(chunk_start + backfill_chunk_size, len(backfill_candidates))
-                                        backfill_chunk = backfill_candidates[chunk_start:chunk_end]
-                                        
-                                        logger.info(f"Processing backfill chunk {chunk_start//backfill_chunk_size + 1}/{(len(backfill_candidates)-1)//backfill_chunk_size + 1} ({len(backfill_chunk)} abstracts)")
-                                        
-                                        chunk_triplets_result, chunk_taxo_result = await process_abstract_chunk(
-                                            backfill_chunk,
-                                            llm_setup,
-                                            refinement_cache,
-                                            is_backfill=True
-                                        )
-                                        
-                                        replacement_triplets.extend(chunk_triplets_result)
-                                        replacement_taxo.update(chunk_taxo_result)
-                                    
-                                    replacement_triplets_by_doi = {}
-                                    for triplet in replacement_triplets:
-                                        doi = triplet[3]
-                                        if doi not in replacement_triplets_by_doi:
-                                            replacement_triplets_by_doi[doi] = []
-                                        replacement_triplets_by_doi[doi].append(triplet)
-                                    
-                                    new_successes = 0
-                                    for abstract in backfill_candidates:
-                                        doi = abstract['doi']
-                                        if doi in replacement_triplets_by_doi and len(replacement_triplets_by_doi[doi]) > 0:
-                                            successful_abstracts.append(abstract)
-                                            new_successes += 1
-                                        else:
-                                            failed_abstracts.append(abstract)
-                                    
-                                    chunk_triplets.extend(replacement_triplets)
-                                    chunk_taxo.update(replacement_taxo)
-                                    chunk.extend(backfill_candidates)
-                                    
-                                    logger.info(f"Backfill #{backfill_attempt}: Got {new_successes} new successful abstracts, total successful: {len(successful_abstracts)}")
-                                else:
-                                    logger.warning(f"Backfill attempt #{backfill_attempt}: No relevant abstracts found, stopping backfill")
+                                logger.info(f"Backfill #{backfill_attempt}: Got {new_successes} new successful abstracts, total successful: {len(successful_abstracts)}")
+                                
+                                if new_successes == 0:
+                                    logger.warning(f"Backfill attempt #{backfill_attempt}: No new successful abstracts, stopping backfill")
                                     break
 
                             final_successful = len(successful_abstracts)
