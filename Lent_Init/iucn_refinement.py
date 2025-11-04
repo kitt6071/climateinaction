@@ -817,6 +817,11 @@ async def get_coarse_iucn_classification( subject: str, predicate: str, threat_d
         clean_json = strip_markdown_json(response_str)
         try:
             result_json = json.loads(clean_json)
+            
+            if isinstance(result_json, list):
+                logger.warning("LLM returned a list instead of object, wrapping it")
+                result_json = {"top_categories": result_json, "reasoning_chain": ""}
+            
             reasoning = result_json.get("reasoning_chain", "")
             categories = result_json.get("top_categories", [])
             

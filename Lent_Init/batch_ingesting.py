@@ -17,9 +17,9 @@ from .setup import setup_llm
 BATCH_CONFIG = {
     'summary_batch_size': 5,
     'triplet_batch_size': 7,
-    'max_summary_workers': 10,
-    'max_triplet_workers': 7,
-    'max_enrichment_workers': 5,
+    'max_summary_workers': 20,
+    'max_triplet_workers': 15,
+    'max_enrichment_workers': 10,
     'enable_batch_processing': True,
     'processing_batch_size': 200
 }

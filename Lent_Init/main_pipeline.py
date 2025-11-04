@@ -680,7 +680,7 @@ async def run_main_pipeline_logic(args):
                                 logger.info(f"Found {len(backfill_candidates)} candidates from the initial batch. Scanning for more.")
                                 
                                 backfill_scan_batch_size = 2000
-                                backfill_process_chunk_size = 200
+                                backfill_process_chunk_size = 1000
                                 new_successes = 0
                                 replacement_triplets = []
                                 replacement_taxo = {}
